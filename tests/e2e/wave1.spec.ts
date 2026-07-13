@@ -210,12 +210,14 @@ test('autosave restores edits across reload', async ({ page }) => {
   expect(p.canUndo).toBe(false);
 });
 
-test('open file picker imports the cat sheet', async ({ page }) => {
+test('open file picker routes the cat sheet through the labeler', async ({ page }) => {
   const chooser = page.waitForEvent('filechooser');
   await page.locator('.sl-act-open').click();
   await (await chooser).setFiles('tests/fixtures/cat-sheet.png');
-  await expect(page.locator('.sl-status')).toContainText('256×480');
+  await expect(page.locator('.sl-importer')).toBeVisible(); // wave 5: sheets go to the importer
+  await page.locator('.sl-importer-import').click();
+  await expect(page.locator('.sl-status')).toContainText('32×32');
   const p = await probe(page);
-  expect(p.docW).toBe(256);
-  expect(p.docH).toBe(480);
+  expect(p.docW).toBe(32);
+  expect(p.docH).toBe(32);
 });

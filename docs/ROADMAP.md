@@ -5,8 +5,9 @@ work on the web. Cozy-retro but professional — ergonomics beat theatre. No acc
 cloud, files in files out. Zero runtime deps, strict TS, real architecture
 (see `ARCHITECTURE.md`).
 
-The original 7-phase single-file plan (v1) is superseded by the wave plan below; v1 lives
-on at `legacy/sprite-lab-v1.html` until Wave 5 reaches labeler parity.
+The original 7-phase single-file plan (v1) is superseded by the wave plan below. v1 is
+RETIRED as of Wave 5 (labeler parity reached); `legacy/sprite-lab-v1.html` stays only as
+a historical reference.
 
 ## Waves
 
@@ -16,7 +17,7 @@ on at `legacy/sprite-lab-v1.html` until Wave 5 reaches labeler parity.
 | 2 | Drawing kit | line/rect/ellipse w/ preview, Bayer 2x2+4x4 dither brushes, x/y/quad mirror, tiling preview, select-rect/lasso/move-float + cut-copy-paste, history panel | tile-able mirrored sprite drawn with shapes; selection float+commit undoable | ✅ |
 | 3 | Animation & layers | timeline panel, frames + per-frame duration, playback w/ fps, reorder/duplicate/reverse, tags (walk/run/sleep, loop/pingpong/hold), onion skin past+future w/ depth+opacity, layer stack (opacity/visibility/merge, per-frame cels) | animate a multi-layer walk cycle with onion skin | ✅ |
 | 4 | Color engine | palettes create/save/import (.gpl+json), palette-swap engine (white-master → coat variants, first-class), color ramps, palette panel polish | regenerate a mochi coat variant via swap in <1 min | ✅ |
-| 5 | Sheets & IO | sheet import + auto/manual slicing, labeler flow (v1 parity: rows→tags→JSON), repack/export sheet+JSON, GIF + animated WebP export (workers), px() char-map export, .sprite project save/load, OPFS autosave | import v1 cat sheet → label → edit → export sheet+json+gif; v1 retired | ⬜ |
+| 5 | Sheets & IO | sheet import + auto/manual slicing, labeler flow (v1 parity: rows→tags→JSON), repack/export sheet+JSON, GIF + animated WebP export (workers), px() char-map export, .sprite project save/load, OPFS autosave | import v1 cat sheet → label → edit → export sheet+json+gif; v1 retired | ✅ |
 | 6 | Ship | touch/pencil (pinch/pan/pressure), perf pass, onboarding demo sheet, PWA offline, host (Pages), final polish | works on iPad w/ pencil; public URL | ⬜ |
 
 Every wave: playwright e2e on side ports, screenshot gate (≥3 critique passes) before
@@ -58,6 +59,7 @@ commit, conventional cozy commit + push.
 |------|---------|
 | 2026-07-07 | Extracted from mOS (`tools/sprite-lab`) into a standalone repo. v1 feature set: row labeling, alpha-scan frame detection, live previews, full pixel editor (tools/onion/undo/copy-paste), palette extraction, localStorage autosave, sheet + JSON export. Demo sheet: the mOS cat (15 rows). Old 7-phase roadmap drafted. |
 | 2026-07-13 | v2 kickoff: architecture designed (doc model ⟂ rendering ⟂ UI, command-pattern history, polymorphic tools, worker encoders), wave plan replaces 7-phase plan, CLAUDE.md + ARCHITECTURE.md written. Awaiting plan nod → Wave 1. |
+| 2026-07-13 | **Wave 5 shipped — v1 retired.** The labeler is reborn: big PNGs route into an import dialog (grid overlay, alpha-scan cell detection, per-row name/fps/include → frames + tags), and the export menu ships sheet+JSON (v1-compatible shape), hand-rolled GIF89a (median-cut + LZW, proven by an in-test decoder), animated WebP (RIFF/ANMF mux, Chrome-family), px() char-map TS for the mOS icon pipeline, and .sprite project save/load. Autosave now mirrors to OPFS with localStorage fallback. Encoders run in a worker with progress in the statusbar. 215 unit + 36 e2e. Gate fixes: menu items carry role=menuitem (getByRole('button') misses them), two-download exports need a listener not parallel waitForEvent. 42 kB gzip. |
 | 2026-07-13 | **Wave 4 shipped.** The coat-swap engine is first-class: a collapsed "coat swap" section scans the doc's used colors, maps source→target chips (target = current color, one-handed flow), and applies as ONE `SwapColors` command across every frame and layer — gate demo recolored the full 90-sprite cat sheet in three clicks. Plus: palette edit mode (replace/remove swatches), hue-shifted 5-step ramps (cool shadows, warm highlights), .gpl/.json palette save+load. 166 unit + 31 e2e green (all first-run). 33 kB gzip. |
 | 2026-07-13 | **Wave 3 shipped.** Animation core: timeline panel (thumb strip + drag reorder + per-frame ms + transport), Player (duration-driven rAF, tag ranges loop/pingpong/hold, draw-pauses), onion skin (silhouette-tinted ghosts, past/future depth + opacity controls), full layer stack (add/remove/reorder/rename/opacity/visibility/merge-down), tags lane (create/rename/resize/mode-cycle/range-play). All structural ops are commands — 141 unit + 27 e2e green. Gate demo: 3-frame 2-layer cycle with onion, exported. Fixes at gate: opacity-drag history coalescing, flex-collapsed svg icons (see gotchas). 31.7 kB gzip. |
 | 2026-07-13 | **Wave 2 shipped.** Contracts extended additively (SelectionState/FloatBuffer/SymmetryMode/DitherMode, ToolCtx selection+float ops, 5 new events), 4 parallel agents (selection core+commands / shape+selection tools / editor wiring+history panel / render ants+axes+tiling+float). Undo covers everything incl. selection lifecycle (lift→drag→anchor chain). 112 unit + 20 e2e green — every Wave 2 e2e flow passed first run. Visual gate (3 passes): px icons for all 6 new tools (two tools both read "L" as monograms), dim off-state mode glyphs, selection ants suppressed while float live. Bundle 22.5 kB gzip. |

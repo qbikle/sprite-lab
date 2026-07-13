@@ -36,8 +36,15 @@ import { HistoryPanel } from '../ui/panels/history';
 import { StatusBar } from '../ui/panels/status';
 import { TimelinePanel } from '../ui/panels/timeline';
 import { Autosave } from '../io/autosave';
-import { installDragDrop, openFilePicker } from '../io/import';
+import { installDragDrop, openFilePicker, type DecodedImage } from '../io/import';
 import { downloadBlob, exportPng } from '../io/exporters/png';
+import { downloadText } from '../io/palettes';
+import { exportSheet } from '../io/exporters/sheet';
+import { canEncodeWebp } from '../io/exporters/webp';
+import { framePxMap } from '../io/exporters/pxmap';
+import { docToSpriteFile, openSpritePicker, spriteFileName } from '../io/project';
+import { EncoderClient } from '../io/workers/protocol';
+import { SheetImporter } from '../ui/panels/importer';
 import { EditorState } from './editor';
 import { Player } from './player';
 
@@ -52,16 +59,23 @@ export class App {
     this.root = root;
   }
 
-  /**
-   * Boot order: restore autosave (else blank 32×32) → core (doc/history/bus)
-   * → editor+tools → shell → viewport → panels → shortcuts → autosave.start()
-   * → topbar actions (new/open/export png/theme).
-   */
+  /** Sync entry point (main.ts). Kicks the async boot — restore is OPFS-first. */
   mount(): void {
     if (this.mounted) return;
     this.mounted = true;
+    void this.start();
+  }
 
-    const doc = Autosave.restore() ?? SpriteDoc.blank(32, 32, 'untitled');
+  /**
+   * Boot order: restore autosave (OPFS → localStorage, else blank 32×32)
+   * → core (doc/history/bus) → editor+tools → shell → viewport → panels
+   * → shortcuts → autosave.start() → topbar actions (new/open/export/theme).
+   */
+  private async start(): Promise<void> {
+    const restored = await Autosave.restoreAsync();
+    if (!this.mounted) return;
+
+    const doc = restored ?? SpriteDoc.blank(32, 32, 'untitled');
     const bus = new Bus();
     const history = new History(doc, bus);
     const tools = [
@@ -301,6 +315,22 @@ export class App {
       viewport.setDocSize(next.width, next.height);
     };
 
+    const importer = new SheetImporter({ bus, adopt });
+    this.teardown.push(() => importer.dispose());
+
+    // Big images (>96px either way) or 'sheet'-named files → slicing importer.
+    const openImage = (img: DecodedImage): void => {
+      if (img.w > 96 || img.h > 96 || img.name.toLowerCase().includes('sheet')) {
+        importer.open(img.pixels, img.w, img.h, img.name);
+      } else {
+        adopt(SpriteDoc.fromImage(img.pixels, img.w, img.h, img.name));
+      }
+    };
+
+    const encoder = new EncoderClient();
+    this.teardown.push(() => encoder.dispose());
+    let encodeSeq = 0;
+
     const toggleTheme = (): void => {
       const next = document.documentElement.dataset['theme'] === 'light' ? 'dark' : 'light';
       document.documentElement.dataset['theme'] = next;
@@ -330,15 +360,110 @@ export class App {
       if (history.canUndo && !window.confirm('Discard the current sprite?')) return;
       adopt(SpriteDoc.blank(32, 32, 'untitled'));
     });
-    addAction('sl-act-open', 'open', () => openFilePicker(adopt));
+    addAction('sl-act-open', 'open', () => openFilePicker(openImage, adopt));
     addAction('sl-act-export', 'export', () => {
       void exportPng(editor.doc, editor.activeFrame)
         .then((blob) => downloadBlob(blob, `${editor.doc.meta.name}.png`))
         .catch(() => bus.emit('status:message', { text: 'png export failed' }));
     });
+    const status = (text: string): void => bus.emit('status:message', { text });
+
+    const exportSheetJson = (): void => {
+      const name = editor.doc.meta.name;
+      void exportSheet(editor.doc)
+        .then(({ png, json }) => {
+          downloadBlob(png, `${name}.sheet.png`);
+          downloadText(json, `${name}.sheet.json`);
+        })
+        .catch(() => status('sheet export failed'));
+    };
+
+    // Flatten a frame into a fresh, transferable ArrayBuffer for the worker.
+    const framePayload = (i: number): { pixels: ArrayBuffer; durationMs: number } => {
+      const flat = editor.doc.flattenFrame(i);
+      const pixels = new ArrayBuffer(flat.byteLength);
+      new Uint32Array(pixels).set(flat);
+      return { pixels, durationMs: editor.doc.frames[i]?.durationMs ?? 100 };
+    };
+
+    const exportGif = (): void => {
+      const d = editor.doc;
+      const frames = d.frames.map((_, i) => framePayload(i));
+      encodeSeq += 1;
+      void encoder
+        .request(
+          { id: encodeSeq, kind: 'gif', w: d.width, h: d.height, frames },
+          frames.map((f) => f.pixels),
+          (done, total) => status(`encoding gif ${done}/${total}`),
+        )
+        .then((blob) => downloadBlob(blob, `${d.meta.name}.gif`))
+        .catch(() => status('gif export failed'));
+    };
+
+    const exportWebpAnim = async (): Promise<void> => {
+      if (!canEncodeWebp()) {
+        status('animated webp needs a chromium browser — try gif');
+        return;
+      }
+      const d = editor.doc;
+      const total = d.frames.length;
+      const frames: Array<{ payload: ArrayBuffer; durationMs: number }> = [];
+      for (let i = 0; i < total; i++) {
+        const flat = d.flattenFrame(i);
+        const canvas = new OffscreenCanvas(d.width, d.height);
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error('Canvas 2D is unavailable in this browser.');
+        const img = ctx.createImageData(d.width, d.height);
+        img.data.set(new Uint8ClampedArray(flat.buffer, flat.byteOffset, flat.length * 4));
+        ctx.putImageData(img, 0, 0);
+        const blob = await canvas.convertToBlob({ type: 'image/webp' });
+        frames.push({ payload: await blob.arrayBuffer(), durationMs: d.frames[i]?.durationMs ?? 100 });
+        status(`encoding webp ${i + 1}/${total}`);
+      }
+      encodeSeq += 1;
+      const out = await encoder.request(
+        { id: encodeSeq, kind: 'webp-mux', w: d.width, h: d.height, frames },
+        frames.map((f) => f.payload),
+      );
+      downloadBlob(out, `${d.meta.name}.webp`);
+    };
+
+    const exportPxSnippet = (): void => {
+      let snippet: string;
+      try {
+        snippet = framePxMap(editor.doc, editor.activeFrame);
+      } catch (err) {
+        status(err instanceof Error ? err.message : 'px map export failed');
+        return;
+      }
+      const fallback = (): void => {
+        downloadText(snippet, `${editor.doc.meta.name}.pxmap.ts`);
+        status('px map downloaded');
+      };
+      try {
+        navigator.clipboard.writeText(snippet).then(() => status('px map copied'), fallback);
+      } catch {
+        fallback();
+      }
+    };
+
+    this.mountExportMenu(actionsHost, [
+      { label: 'sheet + json', run: exportSheetJson },
+      { label: 'gif', run: exportGif },
+      {
+        label: 'animated webp',
+        run: () => { void exportWebpAnim().catch(() => status('webp export failed')); },
+      },
+      { label: 'px map', run: exportPxSnippet },
+      {
+        label: 'save .sprite',
+        run: () => downloadBlob(docToSpriteFile(editor.doc), spriteFileName(editor.doc)),
+      },
+      { label: 'open .sprite', run: () => openSpritePicker(adopt, status) },
+    ]);
     addAction('sl-act-theme', 'theme', toggleTheme);
 
-    this.teardown.push(installDragDrop(adopt));
+    this.teardown.push(installDragDrop(openImage, adopt));
 
     const autosave = new Autosave(bus, () => editor.doc);
     autosave.start();
@@ -455,6 +580,95 @@ export class App {
         delete (window as unknown as { __lab?: object }).__lab;
       });
     }
+  }
+
+  /** 'export…' topbar button + anchored dropdown. Closes on outside click / Esc;
+   *  ArrowUp/ArrowDown walk the items. sl-act-export stays a direct png button. */
+  private mountExportMenu(
+    host: HTMLElement,
+    items: ReadonlyArray<{ label: string; run: () => void }>,
+  ): void {
+    const wrap = document.createElement('div');
+    wrap.className = 'sl-menu-anchor';
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'sl-act-more';
+    button.textContent = 'export…';
+    button.setAttribute('aria-haspopup', 'menu');
+    button.setAttribute('aria-expanded', 'false');
+    const menu = document.createElement('div');
+    menu.className = 'sl-menu';
+    menu.setAttribute('role', 'menu');
+    menu.hidden = true;
+
+    const buttons: HTMLButtonElement[] = [];
+    const close = (): void => {
+      if (menu.hidden) return;
+      menu.hidden = true;
+      button.setAttribute('aria-expanded', 'false');
+    };
+    const open = (): void => {
+      menu.hidden = false;
+      button.setAttribute('aria-expanded', 'true');
+      buttons[0]?.focus();
+    };
+
+    for (const { label, run } of items) {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'sl-menu-item';
+      item.setAttribute('role', 'menuitem');
+      item.textContent = label;
+      item.addEventListener('click', () => {
+        close();
+        run();
+      });
+      buttons.push(item);
+      menu.appendChild(item);
+    }
+
+    const onToggle = (): void => {
+      if (menu.hidden) open();
+      else close();
+    };
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if (menu.hidden) return;
+      const step = (dir: 1 | -1): void => {
+        const at = buttons.findIndex((b) => b === document.activeElement);
+        const next = at < 0
+          ? (dir === 1 ? 0 : buttons.length - 1)
+          : (at + dir + buttons.length) % buttons.length;
+        buttons[next]?.focus();
+      };
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        close();
+        button.focus();
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        e.stopPropagation();
+        step(1);
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        e.stopPropagation();
+        step(-1);
+      }
+    };
+    const onOutside = (e: PointerEvent): void => {
+      if (!(e.target instanceof Node) || !wrap.contains(e.target)) close();
+    };
+    button.addEventListener('click', onToggle);
+    wrap.addEventListener('keydown', onKeyDown);
+    document.addEventListener('pointerdown', onOutside);
+
+    wrap.append(button, menu);
+    host.appendChild(wrap);
+    this.teardown.push(() => {
+      button.removeEventListener('click', onToggle);
+      wrap.removeEventListener('keydown', onKeyDown);
+      document.removeEventListener('pointerdown', onOutside);
+      wrap.remove();
+    });
   }
 
   unmount(): void {

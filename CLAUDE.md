@@ -45,5 +45,5 @@ npm run e2e        # playwright e2e (side ports 5199+)
 
 ## Legacy
 
-`legacy/sprite-lab-v1.html` is the original single-file tool (labeler + basic editor). It stays
-functional (open directly, needs a `sheet.png` sibling) until v2 reaches labeler parity (Wave 5). Reference it for the alpha-scan slicing + row-labeling flow, don't extend it.
+`legacy/sprite-lab-v1.html` is the original single-file tool, RETIRED at Wave 5 (v2 labeler
+parity). Historical reference only — never extend it.

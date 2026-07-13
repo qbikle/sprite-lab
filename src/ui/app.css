@@ -1295,3 +1295,286 @@ textarea,
   border-bottom-width: 3px;
   border-radius: var(--radius);
 }
+
+/* ── export menu ────────────────────────────────────────── */
+
+.sl-menu-anchor {
+  position: relative;
+  display: flex;
+}
+
+.sl-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 60;
+  min-width: 150px;
+  display: flex;
+  flex-direction: column;
+  padding: var(--sp-1);
+  background: var(--panel);
+  border: 2px solid var(--border);
+  box-shadow: 4px 4px 0 var(--shadow);
+}
+
+.sl-shell .sl-menu-item {
+  background: none;
+  border: none;
+  border-radius: 0;
+  padding: 4px 8px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.sl-shell .sl-menu-item:hover:not(:disabled),
+.sl-shell .sl-menu-item:focus-visible {
+  background: var(--panel-2);
+  filter: none;
+  outline: none;
+}
+
+.sl-shell .sl-menu-item:active:not(:disabled) {
+  transform: none;
+  background: var(--accent);
+  color: var(--panel);
+}
+
+/* ── sheet importer (labeler modal) ─────────────────────── */
+
+.sl-importer {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background-color: var(--shadow);
+  background-image: linear-gradient(var(--shadow), var(--shadow));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-4);
+}
+
+.sl-importer-panel {
+  background: var(--panel);
+  color: var(--text);
+  border: 2px solid var(--border);
+  box-shadow: 6px 6px 0 var(--shadow);
+  max-width: 96vw;
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  padding: var(--sp-4);
+  font-family: var(--font-ui);
+  font-size: var(--fs-ui);
+  outline: none;
+}
+
+.sl-importer-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-4);
+}
+
+.sl-importer-title {
+  color: var(--accent);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.sl-importer-title::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  background: var(--accent);
+  margin-right: var(--sp-2);
+}
+
+.sl-importer-name {
+  color: var(--dim);
+  font-size: var(--fs-small);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sl-importer-hint {
+  margin-left: auto;
+  color: var(--dim);
+  font-size: var(--fs-small);
+  flex: none;
+}
+
+.sl-importer-body {
+  display: flex;
+  gap: var(--sp-4);
+  min-height: 0;
+  overflow: auto;
+}
+
+.sl-importer-stage {
+  flex: none;
+  align-self: flex-start;
+}
+
+.sl-importer-preview {
+  display: block;
+  image-rendering: pixelated;
+  border: 2px solid var(--border);
+  background-image: repeating-conic-gradient(var(--checker-a) 0% 25%, var(--checker-b) 0% 50%);
+  background-size: 16px 16px;
+}
+
+.sl-importer-side {
+  width: 320px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  min-height: 0;
+}
+
+.sl-importer button {
+  font: inherit;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.sl-importer button:hover:not(:disabled) {
+  filter: brightness(1.15);
+}
+
+:root[data-theme='light'] .sl-importer button:hover:not(:disabled) {
+  filter: brightness(0.95);
+}
+
+.sl-importer button:active:not(:disabled) {
+  transform: translate(1px, 1px);
+}
+
+.sl-importer button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.sl-importer input[type='text'],
+.sl-importer input[type='number'] {
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  padding: 3px 8px;
+}
+
+.sl-importer :is(button, input):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.sl-importer-dims {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.sl-importer-dim {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+.sl-importer input.sl-importer-num {
+  width: 64px;
+}
+
+.sl-importer-summary {
+  color: var(--dim);
+  font-size: var(--fs-small);
+  font-variant-numeric: tabular-nums;
+}
+
+.sl-importer-rows {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 64px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  border: 2px solid var(--panel-2);
+  scrollbar-width: thin;
+}
+
+.sl-importer-row {
+  height: 32px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-2);
+}
+
+.sl-importer-row.off {
+  opacity: 0.45;
+}
+
+.sl-importer-strip {
+  height: 24px;
+  width: auto;
+  max-width: 96px;
+  flex: none;
+  object-fit: contain;
+  object-position: left center;
+  image-rendering: pixelated;
+  border: 1px solid var(--border);
+  background-image: repeating-conic-gradient(var(--checker-a) 0% 25%, var(--checker-b) 0% 50%);
+  background-size: 8px 8px;
+}
+
+.sl-importer input.sl-importer-label {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  padding: 0 6px;
+  font-size: var(--fs-small);
+}
+
+.sl-importer input.sl-importer-fps {
+  width: 44px;
+  flex: none;
+  height: 24px;
+  padding: 0 4px;
+  font-size: var(--fs-small);
+  text-align: center;
+}
+
+.sl-importer input.sl-importer-inc {
+  flex: none;
+  accent-color: var(--accent);
+}
+
+.sl-importer-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  margin-top: auto;
+  padding-top: var(--sp-2);
+}
+
+.sl-importer button.sl-importer-import {
+  background: var(--accent);
+  color: var(--panel);
+  font-weight: 700;
+}
+
+.sl-importer button.sl-importer-import:disabled {
+  background: var(--panel-2);
+  color: var(--dim);
+  font-weight: 400;
+}
