@@ -60,6 +60,7 @@ export type DirtyScope =
   | { kind: 'frames' }
   | { kind: 'layers' }
   | { kind: 'palette' }
+  | { kind: 'selection' } // no pixels changed — overlays only
   | { kind: 'all' };
 
 /* ── command pattern ────────────────────────────────────── */
@@ -80,8 +81,13 @@ export type ToolId =
   | 'pencil'
   | 'eraser'
   | 'eyedropper'
-  | 'fill';
-// additive in later waves: 'line' | 'rect' | 'ellipse' | 'select-rect' | 'lasso' | 'move'
+  | 'fill'
+  | 'line'
+  | 'rect'
+  | 'ellipse'
+  | 'select-rect'
+  | 'lasso'
+  | 'move';
 
 export interface PointerInfo {
   buttons: number;
@@ -104,6 +110,19 @@ export interface ToolCtx {
   readonly color: Rgba;
   readonly brushSize: number; // 1..8, square footprint
   inBounds(p: PixelPt): boolean;
+
+  /* Wave 2 — selection & float (tools stay ignorant of symmetry/dither:
+     stage() expands mirrors and gates dither internally). */
+  readonly selection: SelectionState | null;
+  /** Replace the selection (null = deselect). Undoable command. */
+  setSelection(mask: Uint8Array | null, label: string): void;
+  readonly float: FloatBuffer | null;
+  /** Lift current selection's pixels into the float (cut from cel). Undoable. */
+  liftSelection(): void;
+  /** Move the float (no command — anchoring records the whole gesture). */
+  dragFloat(dx: number, dy: number): void;
+  /** Merge the float into the cel at its current rect. Undoable. */
+  anchorFloat(): void;
 
   /** Read a pixel from the active cel (not the composite). */
   getCelPixel(p: PixelPt): Rgba;
@@ -141,12 +160,35 @@ export interface StageBuffer {
   mask: Uint8Array;   // docW × docH, 0|1
 }
 
+/* ── Wave 2 additions (documented in ARCHITECTURE contract addenda) ── */
+
+/** Pixel-mask selection. Absent selection = everything editable. */
+export interface SelectionState {
+  mask: Uint8Array; // docW × docH, 0|1
+  bounds: Rect;     // tight bounding box of set bits
+}
+
+/** Pixels lifted off the cel by the move tool / paste, following the pointer. */
+export interface FloatBuffer {
+  pixels: Uint32Array; // rect.w × rect.h
+  rect: Rect;          // current position in doc space
+}
+
+export type SymmetryMode = 'off' | 'x' | 'y' | 'quad';
+export type DitherMode = 'off' | 'bayer2' | 'bayer4';
+
 /** What the viewport needs from the editor — keeps render/ ignorant of app/. */
 export interface ViewportDelegate {
   readonly activeFrame: number;
   readonly activeLayer: number;
   readonly stage: StageBuffer | null;
   readonly brushSize: number;
+  /** Wave 2: floating pixels (move/paste), drawn over the composite. */
+  readonly float: FloatBuffer | null;
+  /** Wave 2: active selection, for marching ants. */
+  readonly selection: SelectionState | null;
+  /** Wave 2: mirror axes overlay. */
+  readonly symmetry: SymmetryMode;
   onPointer(kind: 'down' | 'move' | 'up' | 'cancel', p: PixelPt, e: PointerInfo): void;
   drawToolOverlay(o: OverlayCtx): void;
 }
@@ -166,6 +208,10 @@ export interface EventMap {
   'frame:active': { index: number };
   'layer:active': { index: number };
   'selection:changed': undefined;
+  'float:changed': undefined;
+  'symmetry:changed': { mode: SymmetryMode };
+  'dither:changed': { mode: DitherMode };
+  'tiling:changed': { on: boolean };
   'playback:changed': { playing: boolean };
   'camera:changed': undefined;
   'cursor:moved': { p: PixelPt | null };
@@ -178,3 +224,7 @@ export interface EventMap {
 // [ / ] brush size · + / - zoom · 0 fit · space-drag / middle-drag pan
 // wheel zoom-to-cursor · , grid · T theme · ? cheat sheet · Esc dismiss
 // ⌘/⌃Z undo · ⌘/⌃⇧Z or ⌘/⌃Y redo
+// Wave 2: L line · R rect · O ellipse (⇧ = square/circle, ⌥ = filled)
+// M select-rect · Q lasso · V move · ⌘A select all · ⌘D deselect
+// ⌘C/⌘X/⌘V copy/cut/paste · S symmetry cycle · D dither cycle · . tiling preview
+// Esc: cancel float → clear selection → close overlays

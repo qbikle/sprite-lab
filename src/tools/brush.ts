@@ -4,6 +4,19 @@ import type { PixelPt, Rect } from '../core/contracts';
 export const BRUSH_MIN = 1;
 export const BRUSH_MAX = 8;
 
+const BAYER2 = Uint8Array.from([0, 2, 3, 1]);
+const BAYER4 = Uint8Array.from([0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5]);
+
+/** Bayer gate for dither brushes: true = paint this doc pixel (50% coverage).
+ *  Doc-space coords so pattern stays stable across strokes. */
+export function bayerPass(mode: 'bayer2' | 'bayer4', x: number, y: number): boolean {
+  const n = mode === 'bayer2' ? 2 : 4;
+  const m = mode === 'bayer2' ? BAYER2 : BAYER4;
+  const col = ((x % n) + n) % n;
+  const row = ((y % n) + n) % n;
+  return (m[row * n + col] ?? 0) < (n * n) / 2;
+}
+
 /** Square footprint centered on p (even sizes bias up-left, Aseprite-style). */
 export function stampRect(p: PixelPt, size: number): Rect {
   const off = (size - 1) >> 1;

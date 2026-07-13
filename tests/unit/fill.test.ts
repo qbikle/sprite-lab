@@ -23,6 +23,12 @@ function makeCtx(w: number, h: number, pixels: Uint32Array, color: Rgba): { ctx:
     commitStage: () => {},
     readCel: () => pixels.slice(),
     commitPixels: (after, label) => { commits.push({ buf: after, label }); },
+    selection: null,
+    setSelection: () => {},
+    float: null,
+    liftSelection: () => {},
+    dragFloat: () => {},
+    anchorFloat: () => {},
   };
   return { ctx, commits };
 }

@@ -10,10 +10,17 @@ import { PencilTool } from '../tools/pencil';
 import { EraserTool } from '../tools/eraser';
 import { EyedropperTool } from '../tools/eyedropper';
 import { FillTool } from '../tools/fill';
+import { LineTool } from '../tools/line';
+import { RectTool } from '../tools/rect';
+import { EllipseTool } from '../tools/ellipse';
+import { SelectRectTool } from '../tools/select-rect';
+import { LassoTool } from '../tools/lasso';
+import { MoveTool } from '../tools/move';
 import { Shell } from '../ui/shell';
 import { Shortcuts } from '../ui/shortcuts';
 import { ToolbarPanel } from '../ui/panels/toolbar';
 import { ColorPanel } from '../ui/panels/color';
+import { HistoryPanel } from '../ui/panels/history';
 import { StatusBar } from '../ui/panels/status';
 import { Autosave } from '../io/autosave';
 import { installDragDrop, openFilePicker } from '../io/import';
@@ -43,7 +50,11 @@ export class App {
     const doc = Autosave.restore() ?? SpriteDoc.blank(32, 32, 'untitled');
     const bus = new Bus();
     const history = new History(doc, bus);
-    const tools = [new PencilTool(), new EraserTool(), new EyedropperTool(), new FillTool()];
+    const tools = [
+      new PencilTool(), new EraserTool(), new EyedropperTool(), new FillTool(),
+      new LineTool(), new RectTool(), new EllipseTool(),
+      new SelectRectTool(), new LassoTool(), new MoveTool(),
+    ];
     const editor = new EditorState(doc, history, bus, tools);
     this.teardown.push(() => editor.dispose());
 
@@ -77,6 +88,10 @@ export class App {
       onSelect: (id) => editor.setTool(id),
       getBrush: () => editor.brushSize,
       onBrush: (size) => editor.setBrush(size),
+      getSymmetry: () => editor.symmetry,
+      onSymmetry: () => editor.cycleSymmetry(),
+      getDither: () => editor.dither,
+      onDither: () => editor.cycleDither(),
       onUndo: undo,
       onRedo: redo,
     });
@@ -94,6 +109,15 @@ export class App {
     });
     colorPanel.mount();
     this.teardown.push(() => colorPanel.unmount());
+
+    const historyPanel = new HistoryPanel({
+      host: slots.side,
+      bus,
+      entries: () => history.entries(),
+      jumpTo: (i) => history.jumpTo(i),
+    });
+    historyPanel.mount();
+    this.teardown.push(() => historyPanel.unmount());
 
     const statusBar = new StatusBar({
       host: slots.status,
@@ -166,6 +190,31 @@ export class App {
     shortcuts.register({ keys: 'mod+shift+z', desc: 'redo', group: 'edit', run: redo });
     shortcuts.register({ keys: 'mod+y', desc: 'redo', group: 'edit', run: redo });
     shortcuts.register({
+      keys: 'mod+a', desc: 'select all', group: 'edit', run: () => editor.selectAll(),
+    });
+    shortcuts.register({
+      keys: 'mod+d', desc: 'deselect', group: 'edit', run: () => editor.deselect(),
+    });
+    shortcuts.register({
+      keys: 'mod+c', desc: 'copy', group: 'edit', run: () => editor.copySelection(),
+    });
+    shortcuts.register({
+      keys: 'mod+x', desc: 'cut', group: 'edit', run: () => editor.cutSelection(),
+    });
+    shortcuts.register({
+      keys: 'mod+v', desc: 'paste', group: 'edit', run: () => editor.paste(),
+    });
+    shortcuts.register({
+      keys: 'escape', desc: 'anchor float / deselect', group: 'edit',
+      run: () => { editor.cancelOrDismiss(); },
+    });
+    shortcuts.register({
+      keys: 's', desc: 'cycle symmetry', group: 'tools', run: () => editor.cycleSymmetry(),
+    });
+    shortcuts.register({
+      keys: 'd', desc: 'cycle dither', group: 'tools', run: () => editor.cycleDither(),
+    });
+    shortcuts.register({
       keys: 'x', desc: 'swap colors', group: 'tools', run: () => editor.swapColors(),
     });
     shortcuts.register({
@@ -195,6 +244,9 @@ export class App {
     });
     shortcuts.register({
       keys: ',', desc: 'toggle grid', group: 'canvas', run: () => viewport.toggleGrid(),
+    });
+    shortcuts.register({
+      keys: '.', desc: 'tiling preview', group: 'canvas', run: () => viewport.toggleTiling(),
     });
     shortcuts.register({ keys: 't', desc: 'toggle theme', group: 'app', run: toggleTheme });
     this.teardown.push(shortcuts.attach());

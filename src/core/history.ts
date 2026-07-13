@@ -74,6 +74,13 @@ export class History {
     return { labels: this.stack.map((c) => c.label), cursor: this.cursor };
   }
 
+  /** Undo/redo until the cursor sits at index (0 = pristine, length = latest). */
+  jumpTo(index: number): void {
+    const target = Math.max(0, Math.min(index, this.stack.length));
+    while (this.cursor > target) this.undo();
+    while (this.cursor < target) this.redo();
+  }
+
   /** New doc loaded: clear the stack, rebind. */
   replaceDoc(doc: SpriteDoc): void {
     this.doc = doc;

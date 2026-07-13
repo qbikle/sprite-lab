@@ -4,17 +4,26 @@
  * ViewportDelegate so render/ stays ignorant of app/.
  */
 import type {
-  OverlayCtx, PixelPt, PointerInfo, Rect, Rgba, StageBuffer, ToolCtx, ToolId, ViewportDelegate,
+  DitherMode, FloatBuffer, OverlayCtx, PixelPt, PointerInfo, Rect, Rgba, SelectionState,
+  StageBuffer, SymmetryMode, ToolCtx, ToolId, ViewportDelegate,
 } from '../core/contracts';
 import type { Bus } from '../core/bus';
 import type { History } from '../core/history';
 import type { SpriteDoc } from '../core/doc';
 import { PixelPatch } from '../core/commands/pixel-patch';
+import type { SelectionHost } from '../core/commands/selection-ops';
+import { AnchorFloat, LiftFloat, PasteFloat, SetSelection } from '../core/commands/selection-ops';
+import { maskAll, tightBounds } from '../core/selection';
 import { makeBuffer, packRgba, unpackRgba } from '../core/pixels';
-import { BRUSH_MAX, BRUSH_MIN } from '../tools/brush';
+import { BRUSH_MAX, BRUSH_MIN, bayerPass } from '../tools/brush';
 import type { Tool } from '../tools/tool';
 
 const RECENT_CAP = 10;
+
+const SYMMETRY_ORDER: readonly SymmetryMode[] = ['off', 'x', 'y', 'quad'];
+const DITHER_ORDER: readonly DitherMode[] = ['off', 'bayer2', 'bayer4'];
+
+interface ClipboardData { pixels: Uint32Array; w: number; h: number }
 
 export class EditorState implements ViewportDelegate {
   private currentDoc: SpriteDoc;
@@ -22,6 +31,7 @@ export class EditorState implements ViewportDelegate {
   private readonly busRef: Bus;
   private readonly allTools: readonly Tool[];
   private readonly ctx: ToolCtx;
+  private readonly host: SelectionHost;
 
   private activeTool: Tool;
   private currentToolId: ToolId;
@@ -30,6 +40,12 @@ export class EditorState implements ViewportDelegate {
   private currentBrush = 1;
   private frameIndex = 0;
   private layerIndex = 0;
+
+  private selectionState: SelectionState | null = null;
+  private floatState: FloatBuffer | null = null;
+  private symmetryMode: SymmetryMode = 'off';
+  private ditherMode: DitherMode = 'off';
+  private clipboard: ClipboardData | null = null;
 
   private stageBuf: StageBuffer | null = null;
   private stagedCount = 0;
@@ -57,6 +73,19 @@ export class EditorState implements ViewportDelegate {
     });
 
     const self = this;
+    // Command-facing session state: every mutation emits its bus event.
+    this.host = {
+      get selection() { return self.selectionState; },
+      set selection(v: SelectionState | null) {
+        self.selectionState = v;
+        self.busRef.emit('selection:changed');
+      },
+      get float() { return self.floatState; },
+      set float(v: FloatBuffer | null) {
+        self.floatState = v;
+        self.busRef.emit('float:changed');
+      },
+    };
     this.ctx = {
       get docW() { return self.currentDoc.width; },
       get docH() { return self.currentDoc.height; },
@@ -71,6 +100,12 @@ export class EditorState implements ViewportDelegate {
       commitStage: (label: string) => self.commitStage(label),
       readCel: () => self.readCel(),
       commitPixels: (after: Uint32Array, label: string) => self.commitPixels(after, label),
+      get selection() { return self.selectionState; },
+      setSelection: (mask, label) => self.applySelection(mask, label),
+      get float() { return self.floatState; },
+      liftSelection: () => self.liftSelection(),
+      dragFloat: (dx, dy) => self.dragFloat(dx, dy),
+      anchorFloat: () => self.anchorFloat(),
     };
   }
 
@@ -86,6 +121,7 @@ export class EditorState implements ViewportDelegate {
   get activeToolId(): ToolId { return this.currentToolId; }
   get color(): Rgba { return this.currentColor; }
   get brushSize(): number { return this.currentBrush; }
+  get dither(): DitherMode { return this.ditherMode; }
 
   /* ViewportDelegate */
   get activeFrame(): number { return this.frameIndex; }
@@ -93,12 +129,16 @@ export class EditorState implements ViewportDelegate {
   get stage(): StageBuffer | null {
     return this.stagedCount > 0 ? this.stageBuf : null;
   }
+  get float(): FloatBuffer | null { return this.floatState; }
+  get selection(): SelectionState | null { return this.selectionState; }
+  get symmetry(): SymmetryMode { return this.symmetryMode; }
 
   /** Route to active tool with the concrete ToolCtx. 'cancel' → tool.onCancel + clear stage. */
   onPointer(kind: 'down' | 'move' | 'up' | 'cancel', p: PixelPt, e: PointerInfo): void {
     const tool = this.strokeTool ?? this.activeTool;
     switch (kind) {
       case 'down':
+        if (this.floatState && this.activeTool.id !== 'move') this.anchorFloat();
         this.strokeTool = this.activeTool;
         this.activeTool.onDown(this.ctx, p, e);
         break;
@@ -132,6 +172,7 @@ export class EditorState implements ViewportDelegate {
       this.clearStage();
       this.flushPending();
     }
+    if (this.currentToolId === 'move' && this.floatState) this.anchorFloat();
     this.activeTool = next;
     this.currentToolId = id;
     this.busRef.emit('tool:changed', { id });
@@ -166,7 +207,99 @@ export class EditorState implements ViewportDelegate {
     this.busRef.emit('brush:changed', { size: clamped });
   }
 
-  /** Import/restore: swap doc, reset history + stage, emit doc:replaced. */
+  setSymmetry(mode: SymmetryMode): void {
+    if (mode === this.symmetryMode) return;
+    this.symmetryMode = mode;
+    this.busRef.emit('symmetry:changed', { mode });
+  }
+
+  cycleSymmetry(): void {
+    const at = SYMMETRY_ORDER.indexOf(this.symmetryMode);
+    this.setSymmetry(SYMMETRY_ORDER[(at + 1) % SYMMETRY_ORDER.length] ?? 'off');
+  }
+
+  setDither(mode: DitherMode): void {
+    if (mode === this.ditherMode) return;
+    this.ditherMode = mode;
+    this.busRef.emit('dither:changed', { mode });
+  }
+
+  cycleDither(): void {
+    const at = DITHER_ORDER.indexOf(this.ditherMode);
+    this.setDither(DITHER_ORDER[(at + 1) % DITHER_ORDER.length] ?? 'off');
+  }
+
+  selectAll(): void {
+    const all = maskAll(this.currentDoc.width, this.currentDoc.height);
+    this.historyRef.commit(new SetSelection(this.host, all, 'select all'));
+  }
+
+  deselect(): void {
+    if (!this.selectionState) return;
+    this.historyRef.commit(new SetSelection(this.host, null, 'deselect'));
+  }
+
+  /** Esc chain: anchor a live float, else drop the selection. False = unhandled. */
+  cancelOrDismiss(): boolean {
+    if (this.floatState) {
+      this.anchorFloat();
+      return true;
+    }
+    if (this.selectionState) {
+      this.deselect();
+      return true;
+    }
+    return false;
+  }
+
+  copySelection(): void {
+    const data = this.copyData();
+    if (!data) return;
+    this.clipboard = data;
+    this.writeClipboardPng(data);
+  }
+
+  /** Copy, then drop the float (already lifted off the cel) or zero the masked pixels. */
+  cutSelection(): void {
+    const data = this.copyData();
+    if (!data) return;
+    this.clipboard = data;
+    this.writeClipboardPng(data);
+    if (this.floatState) {
+      this.floatState = null;
+      this.busRef.emit('float:changed');
+      return;
+    }
+    const sel = this.selectionState;
+    if (!sel) return;
+    const key = this.activeCelKey();
+    const before = this.currentDoc.ensureCel(key).slice();
+    const after = before.slice();
+    for (let i = 0; i < after.length; i++) {
+      if (sel.mask[i] === 1) after[i] = 0;
+    }
+    const patch = PixelPatch.fromBuffers(
+      key, this.currentDoc.width, this.currentDoc.height, before, after, 'cut',
+    );
+    if (patch) this.historyRef.commit(patch);
+  }
+
+  /** Clipboard → centered float (anchoring any live float first) + move tool. */
+  paste(): void {
+    const clip = this.clipboard;
+    if (!clip) return;
+    if (this.floatState) this.anchorFloat();
+    const docW = this.currentDoc.width;
+    const docH = this.currentDoc.height;
+    const x = Math.min(docW - 1, Math.max(1 - clip.w, Math.round((docW - clip.w) / 2)));
+    const y = Math.min(docH - 1, Math.max(1 - clip.h, Math.round((docH - clip.h) / 2)));
+    this.historyRef.commit(
+      new PasteFloat(this.host, clip.pixels.slice(), clip.w, clip.h, { x, y }),
+    );
+    this.setTool('move');
+  }
+
+  /** Import/restore: swap doc, reset history + stage + wave-2 state, emit doc:replaced. */
   replaceDoc(doc: SpriteDoc): void {
     if (this.strokeTool) {
       this.strokeTool.onCancel(this.ctx);
@@ -176,6 +309,10 @@ export class EditorState implements ViewportDelegate {
     this.stagedCount = 0;
     this.pendingRect = null;
     this.flattenCache = null;
+    this.selectionState = null;
+    this.floatState = null;
+    this.symmetryMode = 'off';
+    this.ditherMode = 'off';
     this.currentDoc = doc;
     this.historyRef.replaceDoc(doc);
     this.frameIndex = 0;
@@ -184,6 +321,10 @@ export class EditorState implements ViewportDelegate {
     this.prevColor = this.currentColor;
     this.busRef.emit('doc:replaced');
     this.busRef.emit('color:changed', { color: this.currentColor });
+    this.busRef.emit('selection:changed');
+    this.busRef.emit('float:changed');
+    this.busRef.emit('symmetry:changed', { mode: 'off' });
+    this.busRef.emit('dither:changed', { mode: 'off' });
   }
 
   dispose(): void {
@@ -223,16 +364,41 @@ export class EditorState implements ViewportDelegate {
     return this.stageBuf;
   }
 
+  /** p → 1/2/4 mirrored points about the doc center, deduped when on-axis. */
+  private expandSymmetry(p: PixelPt): PixelPt[] {
+    const mode = this.symmetryMode;
+    if (mode === 'off') return [p];
+    const mx = this.currentDoc.width - 1 - p.x;
+    const my = this.currentDoc.height - 1 - p.y;
+    const pts: PixelPt[] = [p];
+    const push = (x: number, y: number): void => {
+      if (!pts.some((q) => q.x === x && q.y === y)) pts.push({ x, y });
+    };
+    if (mode === 'x' || mode === 'quad') push(mx, p.y);
+    if (mode === 'y' || mode === 'quad') push(p.x, my);
+    if (mode === 'quad') push(mx, my);
+    return pts;
+  }
+
+  /** Symmetry-expand, then per point: bounds → selection clip → dither gate → write.
+   *  Erases (color 0) skip the dither gate — the eraser stays solid, deliberately. */
   private stagePixel(p: PixelPt, color: Rgba): void {
-    if (!this.inBounds(p)) return;
-    const buf = this.ensureStageBuf();
-    const i = p.y * this.currentDoc.width + p.x;
-    if (buf.mask[i] !== 1) {
-      buf.mask[i] = 1;
-      this.stagedCount++;
+    const w = this.currentDoc.width;
+    const sel = this.selectionState;
+    const dm = this.ditherMode;
+    for (const q of this.expandSymmetry(p)) {
+      if (!this.inBounds(q)) continue;
+      const i = q.y * w + q.x;
+      if (sel && sel.mask[i] !== 1) continue;
+      if (dm !== 'off' && color !== 0 && !bayerPass(dm, q.x, q.y)) continue;
+      const buf = this.ensureStageBuf();
+      if (buf.mask[i] !== 1) {
+        buf.mask[i] = 1;
+        this.stagedCount++;
+      }
+      buf.color[i] = color;
+      this.growPending(q.x, q.y);
     }
-    buf.color[i] = color;
-    this.growPending(p.x, p.y);
   }
 
   private growPending(x: number, y: number): void {
@@ -297,12 +463,105 @@ export class EditorState implements ViewportDelegate {
     return this.currentDoc.ensureCel(this.activeCelKey()).slice();
   }
 
+  /** Whole-cel replacement; with a selection, unmasked pixels revert to before. */
   private commitPixels(after: Uint32Array, label: string): void {
     const key = this.activeCelKey();
     const before = this.currentDoc.ensureCel(key).slice();
+    let merged = after;
+    const sel = this.selectionState;
+    if (sel) {
+      merged = after.slice();
+      for (let i = 0; i < merged.length; i++) {
+        if (sel.mask[i] !== 1) merged[i] = before[i] ?? 0;
+      }
+    }
     const patch = PixelPatch.fromBuffers(
-      key, this.currentDoc.width, this.currentDoc.height, before, after, label,
+      key, this.currentDoc.width, this.currentDoc.height, before, merged, label,
     );
     if (patch) this.historyRef.commit(patch);
+  }
+
+  /* ── selection & float internals ───────────────────────── */
+
+  private applySelection(mask: Uint8Array | null, label: string): void {
+    let next: SelectionState | null = null;
+    if (mask) {
+      const bounds = tightBounds(mask, this.currentDoc.width, this.currentDoc.height);
+      if (bounds) next = { mask, bounds };
+    }
+    if (!next && !this.selectionState) return;
+    this.historyRef.commit(new SetSelection(this.host, next, label));
+  }
+
+  private liftSelection(): void {
+    if (!this.selectionState || this.floatState) return;
+    this.historyRef.commit(new LiftFloat(
+      this.host, this.activeCelKey(), this.currentDoc.width, this.currentDoc.height,
+    ));
+  }
+
+  /** Move the float; clamped so at least one pixel stays over the doc. No command. */
+  private dragFloat(dx: number, dy: number): void {
+    const f = this.floatState;
+    if (!f) return;
+    const nx = Math.min(this.currentDoc.width - 1, Math.max(1 - f.rect.w, f.rect.x + dx));
+    const ny = Math.min(this.currentDoc.height - 1, Math.max(1 - f.rect.h, f.rect.y + dy));
+    if (nx === f.rect.x && ny === f.rect.y) return;
+    f.rect.x = nx;
+    f.rect.y = ny;
+    this.busRef.emit('float:changed');
+  }
+
+  private anchorFloat(): void {
+    if (!this.floatState) return;
+    this.historyRef.commit(new AnchorFloat(
+      this.host, this.activeCelKey(), this.currentDoc.width, this.currentDoc.height,
+    ));
+  }
+
+  private copyData(): ClipboardData | null {
+    const f = this.floatState;
+    if (f) return { pixels: f.pixels.slice(), w: f.rect.w, h: f.rect.h };
+    const sel = this.selectionState;
+    if (!sel) return null;
+    const { x, y, w, h } = sel.bounds;
+    const docW = this.currentDoc.width;
+    const cel = this.currentDoc.getCel(this.activeCelKey());
+    const out = new Uint32Array(w * h);
+    if (cel) {
+      for (let yy = 0; yy < h; yy++) {
+        for (let xx = 0; xx < w; xx++) {
+          const di = (y + yy) * docW + (x + xx);
+          if (sel.mask[di] === 1) out[yy * w + xx] = cel[di] ?? 0;
+        }
+      }
+    }
+    return { pixels: out, w, h };
+  }
+
+  /** Best-effort OS clipboard mirror — failures are silently ignored. */
+  private writeClipboardPng(data: ClipboardData): void {
+    try {
+      const bytes = new Uint8ClampedArray(data.pixels.slice().buffer);
+      const image = new ImageData(bytes, data.w, data.h);
+      const canvas = document.createElement('canvas');
+      canvas.width = data.w;
+      canvas.height = data.h;
+      const g = canvas.getContext('2d');
+      if (!g) return;
+      g.putImageData(image, 0, 0);
+      canvas.toBlob((blob) => {
+        if (!blob) return;
+        try {
+          void navigator.clipboard
+            .write([new ClipboardItem({ 'image/png': blob })])
+            .catch(() => undefined);
+        } catch {
+          /* clipboard unavailable */
+        }
+      });
+    } catch {
+      /* clipboard unavailable */
+    }
   }
 }

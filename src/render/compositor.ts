@@ -1,5 +1,5 @@
 /** Per-frame composite cache with dirty-rect invalidation. Reads doc, never mutates. */
-import type { DirtyScope, Rect, StageBuffer } from '../core/contracts';
+import type { DirtyScope, FloatBuffer, Rect, StageBuffer } from '../core/contracts';
 import type { SpriteDoc } from '../core/doc';
 
 /** Straight-alpha src-over with layer opacity — duplicates doc.flattenFrame's
@@ -27,6 +27,7 @@ export class Compositor {
   private dirtyRect: Rect | null = null;
   private lastFrame = -1;
   private stageActive = false;
+  private floatActive = false;
 
   constructor(doc: SpriteDoc) {
     this.doc = doc;
@@ -42,6 +43,7 @@ export class Compositor {
     this.alloc();
     this.lastFrame = -1;
     this.stageActive = false;
+    this.floatActive = false;
   }
 
   invalidate(scope: DirtyScope): void {
@@ -57,23 +59,33 @@ export class Compositor {
    * Canvas holding the flattened frame (doc.flattenFrame under the hood,
    * recomposited only in dirty rects). When stage is given, mask=1 pixels
    * REPLACE the active layer's cel in the composite (live tool preview).
+   * When float is given, its pixels composite src-over ON TOP of the whole
+   * stack (hovers above the active layer — Wave 2 simplification).
    * Returned canvas is owned by the compositor — draw from it, don't keep it.
    */
-  frameCanvas(frameIndex: number, stage: StageBuffer | null, activeLayer: number): HTMLCanvasElement {
+  frameCanvas(
+    frameIndex: number, stage: StageBuffer | null, activeLayer: number,
+    float?: FloatBuffer | null,
+  ): HTMLCanvasElement {
+    const f = float ?? null;
     if (frameIndex !== this.lastFrame) {
       this.lastFrame = frameIndex;
       this.allDirty = true;
     }
-    if (stage) {
-      this.compositeWithStage(frameIndex, stage, activeLayer);
-      this.stageActive = true;
+    if (stage || f) {
+      if (stage) this.compositeWithStage(frameIndex, stage, activeLayer);
+      else this.doc.flattenFrame(frameIndex, this.buf);
+      if (f) this.compositeFloat(f);
+      this.stageActive = stage !== null;
+      this.floatActive = f !== null;
       this.allDirty = false;
       this.dirtyRect = null;
       this.upload(null);
       return this.canvas;
     }
-    if (this.stageActive) {
+    if (this.stageActive || this.floatActive) {
       this.stageActive = false;
+      this.floatActive = false;
       this.allDirty = true;
     }
     if (this.allDirty) {
@@ -135,6 +147,25 @@ export class Compositor {
         if (staged && stage.mask[i]) s = stage.color[i] ?? 0;
         if (s === 0) continue;
         this.buf[i] = over(this.buf[i] ?? 0, s, layer.opacity);
+      }
+    }
+  }
+
+  private compositeFloat(f: FloatBuffer): void {
+    const doc = this.doc;
+    const r = f.rect;
+    const x0 = Math.max(0, r.x);
+    const y0 = Math.max(0, r.y);
+    const x1 = Math.min(doc.width, r.x + r.w);
+    const y1 = Math.min(doc.height, r.y + r.h);
+    for (let y = y0; y < y1; y++) {
+      const srcRow = (y - r.y) * r.w - r.x;
+      const dstRow = y * doc.width;
+      for (let x = x0; x < x1; x++) {
+        const s = f.pixels[srcRow + x] ?? 0;
+        if (s === 0) continue;
+        const i = dstRow + x;
+        this.buf[i] = over(this.buf[i] ?? 0, s, 1);
       }
     }
   }

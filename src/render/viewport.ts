@@ -36,6 +36,9 @@ export class Viewport {
   private raf = 0;
   private dirty = false;
   private grid = false;
+  private tiling = false;
+  private antPhase = 0;
+  private antTimer = 0;
   private hover: PixelPt | null = null;
   private spaceHeld = false;
 
@@ -103,6 +106,9 @@ export class Viewport {
     }));
     this.disposers.push(this.bus.on('camera:changed', () => this.requestRender()));
     this.disposers.push(this.bus.on('palette:changed', () => this.requestRender()));
+    this.disposers.push(this.bus.on('selection:changed', () => this.requestRender()));
+    this.disposers.push(this.bus.on('float:changed', () => this.requestRender()));
+    this.disposers.push(this.bus.on('symmetry:changed', () => this.requestRender()));
     this.disposers.push(this.bus.on('theme:changed', () => {
       this.buildChecker();
       this.requestRender();
@@ -117,6 +123,10 @@ export class Viewport {
     if (this.raf !== 0) {
       cancelAnimationFrame(this.raf);
       this.raf = 0;
+    }
+    if (this.antTimer !== 0) {
+      clearTimeout(this.antTimer);
+      this.antTimer = 0;
     }
     this.ro?.disconnect();
     this.ro = null;
@@ -153,6 +163,12 @@ export class Viewport {
     this.requestRender();
   }
 
+  toggleTiling(): void {
+    this.tiling = !this.tiling;
+    this.bus.emit('tiling:changed', { on: this.tiling });
+    this.requestRender();
+  }
+
   /* ── render ─────────────────────────────────────────────── */
 
   private render(): void {
@@ -174,7 +190,23 @@ export class Viewport {
       g.fillRect(x0, y0, w, h);
     }
     const frame = this.compositor.frameCanvas(
-      this.delegate.activeFrame, this.delegate.stage, this.delegate.activeLayer);
+      this.delegate.activeFrame, this.delegate.stage, this.delegate.activeLayer,
+      this.delegate.float);
+    if (this.tiling) {
+      // 3×3 wrap preview: 8 dimmed neighbors (no checker), real doc on top.
+      g.globalAlpha = 0.45;
+      for (let ty = -1; ty <= 1; ty++) {
+        for (let tx = -1; tx <= 1; tx++) {
+          if (tx === 0 && ty === 0) continue;
+          const nx = snap(org.x + tx * this.docW * this.camera.zoom);
+          const ny = snap(org.y + ty * this.docH * this.camera.zoom);
+          const nw = snap(org.x + (tx + 1) * this.docW * this.camera.zoom) - nx;
+          const nh = snap(org.y + (ty + 1) * this.docH * this.camera.zoom) - ny;
+          g.drawImage(frame, nx, ny, nw, nh);
+        }
+      }
+      g.globalAlpha = 1;
+    }
     g.drawImage(frame, x0, y0, w, h);
 
     const o: OverlayCtx = { g, camera: this.camera };
@@ -184,8 +216,25 @@ export class Viewport {
       grid: this.grid,
       hover: this.hover,
       brushSize: this.delegate.brushSize,
+      selection: this.delegate.selection,
+      float: this.delegate.float,
+      symmetry: this.delegate.symmetry,
+      antPhase: this.antPhase,
     });
     this.delegate.drawToolOverlay(o);
+    this.tickAnts();
+  }
+
+  /** Slow marching-ants ticker: while a selection/float exists, advance the
+   *  dash phase (~8fps) and re-render; single timer, cleared on unmount. */
+  private tickAnts(): void {
+    if (!this.delegate.selection && !this.delegate.float) return;
+    if (this.antTimer !== 0) return;
+    this.antTimer = window.setTimeout(() => {
+      this.antTimer = 0;
+      this.antPhase = (this.antPhase + 1) % 8;
+      this.requestRender();
+    }, 120);
   }
 
   private buildChecker(): void {
