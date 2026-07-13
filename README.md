@@ -1,35 +1,42 @@
 # sprite-lab
 
-A zero-dependency, single-file web tool for working with sprite sheets: label
-animation rows, preview them at real speed, and pixel-edit frames in place.
+A cozy-retro, professional pixel-art & animation editor for the web. Zero runtime
+dependencies, strict TypeScript, files in — files out.
 
-Born as a side-tool while building [mOS](https://github.com/qbikle/mOS-portfolio)'s
-desktop cat — grew a full editor, now it's its own thing.
+Born as a single-file side-tool while building [mOS](https://github.com/qbikle/mOS-portfolio)'s
+desktop cat; now growing into the tool you reach for instead of Aseprite for pixel work.
 
 ## Run
 
 ```bash
-# any static server from a directory containing a sheet.png
-python3 -m http.server 8787
-# open http://localhost:8787
+npm install
+npm run dev        # http://localhost:5180
 ```
 
-Drop your own `sheet.png` next to `index.html` (any dimensions; set frame w/h
-in the toolbar and hit rebuild).
+```bash
+npm run build      # typecheck + production build
+npm run test       # vitest unit suite (core model)
+npm run e2e        # playwright end-to-end (side port 5199)
+```
 
-## What it does today
+## Today (Wave 1)
 
-- **Auto-slicing**: detects frames per row via alpha scan (variable counts fine)
-- **Label & tune**: name each row, per-row fps override, include/exclude frames
-- **Live previews**: every row animates at real speed, zoom 2–8x
-- **Pixel editor**: click any frame — pencil/eraser/fill/eyedropper, nudge,
-  h-flip, onion skin (prev red / next teal), frame copy/paste, 200-step
-  undo/redo across frames, live row playback while you paint
-- **Palette**: auto-extracted from the sheet + custom colors
-- **Persistence**: edits autosave to localStorage; `download sheet.png`
-  exports your edited sheet; `export json` emits the animation metadata
-- One HTML file. No build, no deps.
+- Crisp, dpr-aware canvas — smooth pan/zoom (wheel = zoom-to-cursor, space/middle-drag = pan, pinch on touch), zoom stops 25%–6400%
+- Pencil / eraser / eyedropper / fill (contiguous + global with ⇧), brush sizes 1–8
+- Command-pattern undo/redo across everything, byte-budgeted history
+- Color panel: palette swatches, hex input, recent colors, transparent erase-ink
+- Dark + light themes (`T`), keyboard-first (`?` shows the cheat sheet)
+- PNG import (picker + drag-drop) and export, localStorage autosave
 
 ## Where it's going
 
-See [`docs/ROADMAP.md`](docs/ROADMAP.md).
+See [`docs/ROADMAP.md`](docs/ROADMAP.md) — waves: drawing kit (shapes, dither,
+mirror, selection) → animation & layers → palette engine (coat-swap as a feature)
+→ sheets & IO (labeler, GIF/WebP, project files) → ship (PWA, touch/pencil).
+
+Architecture (frozen contracts, module map): [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
+## Legacy
+
+The original single-file tool lives at [`legacy/sprite-lab-v1.html`](legacy/sprite-lab-v1.html)
+(open beside a `sheet.png` via any static server) until v2 reaches labeler parity.

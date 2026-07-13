@@ -1,0 +1,58 @@
+/* ★ Token NAMES are frozen — values are Agent D's canvas. Both themes must
+ * look intentional; AA contrast for text. Cozy-retro, professional. */
+
+:root,
+:root[data-theme='dark'] {
+  /* surfaces */
+  --bg: #16172a;
+  --panel: #222440;
+  --panel-2: #2a2c4c;
+  --border: #0d0e1c;
+  --shadow: rgba(0, 0, 0, 0.55);
+
+  /* text */
+  --text: #e8e6f0;
+  --dim: #9a94b8;
+
+  /* brand */
+  --accent: #ffb454;
+  --accent-2: #6c5b9e;
+  --danger: #e05555;
+  --ok: #4cc38a;
+
+  /* canvas checkerboard */
+  --checker-a: #20213a;
+  --checker-b: #2a2c48;
+
+  /* type */
+  --font-ui: ui-monospace, Menlo, monospace;
+  --fs-ui: 13px;
+  --fs-small: 11px;
+
+  /* spacing / radii */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --radius: 0px;
+}
+
+:root[data-theme='light'] {
+  --bg: #efece2;
+  --panel: #faf7ee;
+  --panel-2: #e6e1d2;
+  --border: #4a4636;
+  --shadow: rgba(60, 50, 20, 0.3);
+
+  --text: #2b2820;
+  --dim: #6f6a58;
+
+  /* burnt amber: 4.7:1 vs --panel, pairs with --panel as fill text */
+  --accent: #b45309;
+  --accent-2: #7a6ba8;
+  --danger: #bf3a3a;
+  --ok: #2e8a5f;
+
+  --checker-a: #ddd8c8;
+  --checker-b: #cfc9b6;
+}
