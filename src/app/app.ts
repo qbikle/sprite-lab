@@ -3,6 +3,8 @@ import { Bus } from '../core/bus';
 import { History } from '../core/history';
 import { SpriteDoc } from '../core/doc';
 import { AddPaletteColor } from '../core/commands/palette-ops';
+import { RemovePaletteColor, ReplacePaletteColor, SetPalette } from '../core/commands/palette-edit';
+import { SwapColors, usedColors } from '../core/commands/palette-swap';
 import {
   AddFrame, DuplicateFrame, RemoveFrame, ReorderFrame, ReverseFrames, SetFrameDuration,
 } from '../core/commands/frames-ops';
@@ -28,6 +30,7 @@ import { Shell } from '../ui/shell';
 import { Shortcuts } from '../ui/shortcuts';
 import { ToolbarPanel } from '../ui/panels/toolbar';
 import { ColorPanel } from '../ui/panels/color';
+import { SwapPanel } from '../ui/panels/swap';
 import { LayersPanel } from '../ui/panels/layers';
 import { HistoryPanel } from '../ui/panels/history';
 import { StatusBar } from '../ui/panels/status';
@@ -132,9 +135,36 @@ export class App {
       swapColors: () => editor.swapColors(),
       getPalette: () => editor.doc.palette,
       addColor: (c) => history.commit(new AddPaletteColor(c)),
+      replaceColor: (index, c) => history.commit(new ReplacePaletteColor(index, c)),
+      removeColor: (index) => history.commit(new RemovePaletteColor(index)),
+      addRamp: (colors) => {
+        const have = new Set(editor.doc.palette.colors);
+        const fresh = colors.filter((c) => {
+          if (have.has(c)) return false;
+          have.add(c);
+          return true;
+        });
+        if (fresh.length === 0) {
+          bus.emit('status:message', { text: 'ramp colors already in palette' });
+          return;
+        }
+        history.commit(new SetPalette([...editor.doc.palette.colors, ...fresh], null, 'add ramp'));
+      },
+      setPalette: (name, colors) => history.commit(new SetPalette(colors, name, 'load palette')),
+      getDocName: () => editor.doc.meta.name,
     });
     colorPanel.mount();
     this.teardown.push(() => colorPanel.unmount());
+
+    const swapPanel = new SwapPanel({
+      host: slots.side,
+      bus,
+      getUsedColors: () => usedColors(editor.doc, 12),
+      getCurrentColor: () => editor.color,
+      applySwap: (pairs) => history.commit(new SwapColors(pairs)),
+    });
+    swapPanel.mount();
+    this.teardown.push(() => swapPanel.unmount());
 
     const layersPanel = new LayersPanel({
       host: slots.side,

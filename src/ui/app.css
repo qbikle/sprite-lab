@@ -444,7 +444,7 @@ textarea,
   inset: 0;
 }
 
-.sl-swap {
+.sl-xswap {
   width: 28px;
   height: 24px;
   padding: 0;
@@ -452,6 +452,10 @@ textarea,
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.sl-xswap svg {
+  flex: none;
 }
 
 .sl-hex {
@@ -524,6 +528,199 @@ textarea,
 
 .sl-sw-add:hover {
   color: var(--text);
+}
+
+/* ── panel heads with icon actions ──────────────────────── */
+
+.sl-panel-head.sl-head-row::after {
+  content: none;
+}
+
+.sl-head-line {
+  flex: 1;
+  border-top: 1px solid var(--panel-2);
+}
+
+.sl-shell .sl-head-btn {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border-width: 1px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  color: var(--dim);
+}
+
+.sl-head-btn svg {
+  flex: none;
+}
+
+.sl-shell .sl-head-btn:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.sl-shell .sl-head-btn.active {
+  background: var(--accent);
+  color: var(--panel);
+}
+
+/* ── palette edit mode ──────────────────────────────────── */
+
+.sl-swatches.editing .sl-sw:not(.sl-sw-clear):not(.sl-sw-add) {
+  outline: 1px dashed var(--accent-2);
+  outline-offset: 1px;
+}
+
+/* ── coat swap panel ────────────────────────────────────── */
+
+.sl-swap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.sl-swap-head {
+  cursor: pointer;
+}
+
+.sl-swap-caret {
+  width: 8px;
+  display: flex;
+  align-items: center;
+  flex: none;
+}
+
+.sl-swap-caret svg {
+  flex: none;
+}
+
+.sl-swap-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.sl-swap-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  max-height: min(30vh, 320px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+}
+
+.sl-swap-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 2px 3px;
+  border: 1px solid transparent;
+  flex: none;
+}
+
+.sl-swap-row.mapped {
+  border-color: var(--accent);
+}
+
+.sl-swap-chip {
+  width: 18px;
+  height: 18px;
+  position: relative;
+  border: 2px solid var(--border);
+  background-image: repeating-conic-gradient(var(--checker-a) 0% 25%, var(--checker-b) 0% 50%);
+  background-size: 8px 8px;
+  flex: none;
+}
+
+.sl-swap-fill {
+  position: absolute;
+  inset: 0;
+}
+
+.sl-swap-arrow {
+  display: flex;
+  align-items: center;
+  flex: none;
+  color: var(--dim);
+}
+
+.sl-swap-arrow svg {
+  flex: none;
+}
+
+.sl-shell button.sl-swap-target {
+  padding: 0;
+  border-radius: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--dim);
+  font-size: 12px;
+  line-height: 1;
+  background-image: repeating-conic-gradient(var(--checker-a) 0% 25%, var(--checker-b) 0% 50%);
+  background-size: 8px 8px;
+}
+
+.sl-shell button.sl-swap-target:not(.set) {
+  background-image: none;
+}
+
+.sl-swap-target.clear::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to top right,
+    transparent calc(50% - 1.5px),
+    var(--danger) calc(50% - 1.5px),
+    var(--danger) calc(50% + 1.5px),
+    transparent calc(50% + 1.5px)
+  );
+}
+
+.sl-swap-dash {
+  pointer-events: none;
+}
+
+.sl-swap-empty {
+  font-size: var(--fs-small);
+  color: var(--dim);
+  padding: 2px 3px;
+}
+
+.sl-swap-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.sl-shell .sl-swap-apply {
+  flex: 1;
+  background: var(--accent);
+  color: var(--panel);
+  font-weight: 700;
+}
+
+.sl-shell .sl-swap-apply:disabled {
+  background: var(--panel-2);
+  color: var(--dim);
+  font-weight: 400;
+}
+
+.sl-shell .sl-swap-clearbtn {
+  background: none;
+  border: none;
+  color: var(--dim);
+  padding: 2px 4px;
+  flex: none;
+}
+
+.sl-shell .sl-swap-clearbtn:hover:not(:disabled) {
+  color: var(--text);
+  filter: none;
 }
 
 /* ── shared compact range input ─────────────────────────── */

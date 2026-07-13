@@ -2,6 +2,8 @@
 import type { Palette, Rgba } from '../../core/contracts';
 import type { Bus } from '../../core/bus';
 import { hexToRgba, rgbaToHex } from '../../core/pixels';
+import { makeRamp } from '../../core/ramps';
+import { downloadText, openPaletteFile, paletteToGpl } from '../../io/palettes';
 
 export interface ColorPanelOpts {
   host: HTMLElement;
@@ -12,6 +14,16 @@ export interface ColorPanelOpts {
   getPalette(): Palette;
   /** Undoable palette add (AddPaletteColor via history). */
   addColor(c: Rgba): void;
+  /** Undoable swatch replace (ReplacePaletteColor via history). */
+  replaceColor(index: number, c: Rgba): void;
+  /** Undoable swatch remove (RemovePaletteColor via history). */
+  removeColor(index: number): void;
+  /** Undoable ramp append (SetPalette via history; app dedupes vs existing). */
+  addRamp(colors: Rgba[]): void;
+  /** Undoable whole-palette replace (SetPalette via history). */
+  setPalette(name: string, colors: Rgba[]): void;
+  /** Doc name, for the .gpl download filename. */
+  getDocName(): string;
 }
 
 const HEX_RE = /^#?(?:[0-9a-f]{6}|[0-9a-f]{8})$/i;
@@ -28,6 +40,45 @@ const SWAP_PX = [
   '#######',
   '.#.....',
   '..#....',
+] as const;
+
+const EDIT_PX = [
+  '.....##',
+  '....###',
+  '...###.',
+  '..###..',
+  '.###...',
+  '###....',
+  '#......',
+] as const;
+
+const RAMP_PX = [
+  '....##',
+  '....##',
+  '..####',
+  '..####',
+  '######',
+  '######',
+] as const;
+
+const SAVE_PX = [
+  '...#...',
+  '...#...',
+  '.#####.',
+  '..###..',
+  '...#...',
+  '#.....#',
+  '#######',
+] as const;
+
+const LOAD_PX = [
+  '...#...',
+  '..###..',
+  '.#####.',
+  '...#...',
+  '...#...',
+  '#.....#',
+  '#######',
 ] as const;
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -61,6 +112,15 @@ function div(className: string): HTMLDivElement {
   return el;
 }
 
+function headBtn(rows: readonly string[], title: string): HTMLButtonElement {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'sl-head-btn';
+  btn.title = title;
+  btn.appendChild(pxIcon(rows, 10));
+  return btn;
+}
+
 export class ColorPanel {
   private readonly opts: ColorPanelOpts;
   private readonly unsubs: Array<() => void> = [];
@@ -71,6 +131,9 @@ export class ColorPanel {
   private paletteGrid: HTMLElement | null = null;
   private recentHead: HTMLElement | null = null;
   private recentGrid: HTMLElement | null = null;
+  private editBtn: HTMLButtonElement | null = null;
+  private editMode = false;
+  private editHintShown = false;
   private cur: Rgba = 0;
   private prev: Rgba = 0;
 
@@ -98,7 +161,7 @@ export class ColorPanel {
     prev.appendChild(prevFill);
     const swap = document.createElement('button');
     swap.type = 'button';
-    swap.className = 'sl-swap';
+    swap.className = 'sl-xswap';
     swap.title = 'swap colors (X)';
     swap.appendChild(pxIcon(SWAP_PX, 10));
     swap.addEventListener('click', () => o.swapColors());
@@ -125,8 +188,28 @@ export class ColorPanel {
     hex.addEventListener('blur', () => this.commitHex());
     hex.addEventListener('animationend', () => hex.classList.remove('sl-shake'));
 
-    const palHead = div('sl-panel-head');
-    palHead.textContent = 'palette';
+    const palHead = div('sl-panel-head sl-head-row');
+    const palTitle = document.createElement('span');
+    palTitle.textContent = 'palette';
+    const palLine = div('sl-head-line');
+    const editBtn = headBtn(EDIT_PX, 'edit palette: click = replace with current, alt-click = remove');
+    editBtn.addEventListener('click', () => this.toggleEdit());
+    const rampBtn = headBtn(RAMP_PX, 'add a 5-step ramp from the current color');
+    rampBtn.addEventListener('click', () => {
+      const base = o.getColor();
+      if (base === 0) {
+        o.bus.emit('status:message', { text: 'pick a color first — ramps need a base' });
+        return;
+      }
+      o.addRamp(makeRamp(base, 5));
+    });
+    const saveBtn = headBtn(SAVE_PX, 'save palette (.gpl)');
+    saveBtn.addEventListener('click', () => this.savePalette());
+    const loadBtn = headBtn(LOAD_PX, 'load palette (.gpl / .json)');
+    loadBtn.addEventListener('click', () => {
+      openPaletteFile((name, colors) => o.setPalette(name, colors));
+    });
+    palHead.append(palTitle, palLine, editBtn, rampBtn, saveBtn, loadBtn);
     const palGrid = div('sl-swatches');
     const recHead = div('sl-panel-head');
     recHead.textContent = 'recent';
@@ -142,6 +225,7 @@ export class ColorPanel {
     this.paletteGrid = palGrid;
     this.recentHead = recHead;
     this.recentGrid = recGrid;
+    this.editBtn = editBtn;
 
     this.unsubs.push(
       o.bus.on('color:changed', ({ color }) => {
@@ -169,6 +253,7 @@ export class ColorPanel {
     this.mainFill = this.prevFill = null;
     this.hexInput = null;
     this.paletteGrid = this.recentHead = this.recentGrid = null;
+    this.editBtn = null;
   }
 
   private refresh(): void {
@@ -179,12 +264,13 @@ export class ColorPanel {
     const pal = this.opts.getPalette();
     const grid = this.paletteGrid;
     if (grid) {
+      grid.classList.toggle('editing', this.editMode);
       grid.replaceChildren();
       grid.appendChild(this.swatch(0, this.cur === 0, 'transparent (erase ink)'));
-      for (const c of pal.colors) {
-        if (c === 0) continue;
-        grid.appendChild(this.swatch(c, c === this.cur));
-      }
+      pal.colors.forEach((c, i) => {
+        if (c === 0) return;
+        grid.appendChild(this.swatch(c, c === this.cur, undefined, i));
+      });
       const add = document.createElement('button');
       add.type = 'button';
       add.className = 'sl-sw sl-sw-add';
@@ -203,11 +289,14 @@ export class ColorPanel {
     }
   }
 
-  private swatch(c: Rgba, active: boolean, title?: string): HTMLButtonElement {
+  private swatch(c: Rgba, active: boolean, title?: string, palIndex?: number): HTMLButtonElement {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = c === 0 ? 'sl-sw sl-sw-clear' : 'sl-sw';
-    btn.title = title ?? rgbaToHex(c);
+    const editable = this.editMode && palIndex !== undefined;
+    btn.title = editable
+      ? `${rgbaToHex(c)} — click: replace with current, alt-click: remove`
+      : title ?? rgbaToHex(c);
     if (active) btn.classList.add('active');
     if (c !== 0) {
       const fill = document.createElement('span');
@@ -215,8 +304,43 @@ export class ColorPanel {
       fill.style.background = rgbaToHex(c);
       btn.appendChild(fill);
     }
-    btn.addEventListener('click', () => this.opts.setColor(c));
+    btn.addEventListener('click', (e) => {
+      if (this.editMode && palIndex !== undefined) {
+        if (e.altKey) {
+          this.opts.removeColor(palIndex);
+          return;
+        }
+        const cur = this.opts.getColor();
+        if (cur === 0) {
+          this.opts.bus.emit('status:message', {
+            text: 'current color is transparent — pick a color to replace with',
+          });
+          return;
+        }
+        this.opts.replaceColor(palIndex, cur);
+        return;
+      }
+      this.opts.setColor(c);
+    });
     return btn;
+  }
+
+  private toggleEdit(): void {
+    this.editMode = !this.editMode;
+    this.editBtn?.classList.toggle('active', this.editMode);
+    if (this.editMode && !this.editHintShown) {
+      this.editHintShown = true;
+      this.opts.bus.emit('status:message', {
+        text: 'edit palette: click = replace with current, alt-click = remove',
+      });
+    }
+    this.refresh();
+  }
+
+  private savePalette(): void {
+    const pal = this.opts.getPalette();
+    const docName = this.opts.getDocName();
+    downloadText(paletteToGpl(pal.name || docName, pal.colors), `${docName}.gpl`);
   }
 
   private cssColor(c: Rgba): string {
