@@ -109,6 +109,9 @@ export class Viewport {
     this.disposers.push(this.bus.on('selection:changed', () => this.requestRender()));
     this.disposers.push(this.bus.on('float:changed', () => this.requestRender()));
     this.disposers.push(this.bus.on('symmetry:changed', () => this.requestRender()));
+    this.disposers.push(this.bus.on('onion:changed', () => this.requestRender()));
+    this.disposers.push(this.bus.on('frame:active', () => this.requestRender()));
+    this.disposers.push(this.bus.on('playback:changed', () => this.requestRender()));
     this.disposers.push(this.bus.on('theme:changed', () => {
       this.buildChecker();
       this.requestRender();
@@ -207,6 +210,7 @@ export class Viewport {
       }
       g.globalAlpha = 1;
     }
+    this.drawGhosts(g, x0, y0, w, h);
     g.drawImage(frame, x0, y0, w, h);
 
     const o: OverlayCtx = { g, camera: this.camera };
@@ -223,6 +227,25 @@ export class Viewport {
     });
     this.delegate.drawToolOverlay(o);
     this.tickAnts();
+  }
+
+  /** Onion ghosts under the composite (center tile only): past red then
+   *  future teal, farthest→nearest so near ghosts sit on top. Skipped while
+   *  playing. Each ghost canvas is reused — drawn before the next request. */
+  private drawGhosts(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number): void {
+    const onion = this.delegate.onion;
+    if (!onion.enabled || this.delegate.playing) return;
+    const idx = this.delegate.activeFrame;
+    for (let d = onion.past; d >= 1; d--) {
+      const ghost = this.compositor.ghostCanvas(
+        idx - d, 'past', onion.opacity * (1 - (d - 1) / (onion.past + 1)));
+      if (ghost) g.drawImage(ghost, x, y, w, h);
+    }
+    for (let d = onion.future; d >= 1; d--) {
+      const ghost = this.compositor.ghostCanvas(
+        idx + d, 'future', onion.opacity * (1 - (d - 1) / (onion.future + 1)));
+      if (ghost) g.drawImage(ghost, x, y, w, h);
+    }
   }
 
   /** Slow marching-ants ticker: while a selection/float exists, advance the

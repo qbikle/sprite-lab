@@ -17,6 +17,9 @@ function over(d: number, s: number, opacity: number): number {
   return ((Math.round(oa * 255) << 24) | (b << 16) | (g << 8) | r) >>> 0;
 }
 
+/** Silhouette tint bases (LE ABGR, alpha 0): past #ff5555, future #2ec8c0. */
+const GHOST_TINT = { past: 0x005555ff, future: 0x00c0c82e } as const;
+
 export class Compositor {
   private doc: SpriteDoc;
   private readonly canvas: HTMLCanvasElement;
@@ -28,6 +31,10 @@ export class Compositor {
   private lastFrame = -1;
   private stageActive = false;
   private floatActive = false;
+  private ghostCnv: HTMLCanvasElement | null = null;
+  private ghostCtx: CanvasRenderingContext2D | null = null;
+  private ghostBuf: Uint32Array | null = null;
+  private ghostImg: ImageData | null = null;
 
   constructor(doc: SpriteDoc) {
     this.doc = doc;
@@ -100,6 +107,47 @@ export class Compositor {
       this.upload(r);
     }
     return this.canvas;
+  }
+
+  /**
+   * docW×docH silhouette-tinted flat composite of a frame, for onion skin.
+   * Per pixel: out = tint color with alpha = srcAlpha * alpha (classic onion
+   * silhouette). All ghosts share ONE scratch canvas — the returned canvas is
+   * reused, draw it before requesting another ghost. Null when frameIndex is
+   * out of bounds. Never touches the main composite cache.
+   */
+  ghostCanvas(frameIndex: number, tint: 'past' | 'future', alpha: number): HTMLCanvasElement | null {
+    if (frameIndex < 0 || frameIndex >= this.doc.frames.length) return null;
+    const w = this.doc.width;
+    const h = this.doc.height;
+    let cnv = this.ghostCnv;
+    let ctx = this.ghostCtx;
+    let buf = this.ghostBuf;
+    let img = this.ghostImg;
+    if (!cnv || !ctx || !buf || !img || cnv.width !== w || cnv.height !== h) {
+      cnv = cnv ?? document.createElement('canvas');
+      cnv.width = w;
+      cnv.height = h;
+      const c = cnv.getContext('2d', { willReadFrequently: false });
+      if (!c) throw new Error('compositor: 2d context unavailable');
+      ctx = c;
+      const bytes = new Uint8ClampedArray(w * h * 4);
+      buf = new Uint32Array(bytes.buffer);
+      img = new ImageData(bytes, w, h);
+      this.ghostCnv = cnv;
+      this.ghostCtx = ctx;
+      this.ghostBuf = buf;
+      this.ghostImg = img;
+    }
+    this.doc.flattenFrame(frameIndex, buf);
+    const base = GHOST_TINT[tint];
+    const a = Math.min(1, Math.max(0, alpha));
+    for (let i = 0; i < buf.length; i++) {
+      const sa = (buf[i] ?? 0) >>> 24;
+      buf[i] = sa === 0 ? 0 : ((Math.round(sa * a) << 24) | base) >>> 0;
+    }
+    ctx.putImageData(img, 0, 0);
+    return cnv;
   }
 
   private alloc(): void {

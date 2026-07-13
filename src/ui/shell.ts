@@ -7,6 +7,7 @@ export interface ShellSlots {
   toolbar: HTMLElement;  // left rail
   canvas: HTMLElement;   // center, viewport mounts here
   side: HTMLElement;     // right rail (color panel now, more later)
+  timeline: HTMLElement; // bottom strip above the statusbar (frames + playback)
   status: HTMLElement;   // bottom bar
 }
 
@@ -37,10 +38,11 @@ export class Shell {
     const toolbar = region('div', 'sl-toolbar');
     const canvas = region('div', 'sl-canvas');
     const side = region('div', 'sl-side');
+    const timeline = region('div', 'sl-timeline');
     const status = region('div', 'sl-status');
-    root.replaceChildren(topbar, toolbar, canvas, side, status);
+    root.replaceChildren(topbar, toolbar, canvas, side, timeline, status);
 
-    return { topbar, toolbar, canvas, side, status };
+    return { topbar, toolbar, canvas, side, timeline, status };
   }
 
   unmount(): void {

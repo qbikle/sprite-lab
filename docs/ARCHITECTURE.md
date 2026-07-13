@@ -170,3 +170,9 @@ never touch the doc, the canvas, or the DOM directly.
   of the frozen surface, consumed by App teardown only.
 - UI event contract: every writer of panel-visible state must emit its bus event —
   e.g. `viewport.setDocSize` emits `camera:changed` after refit.
+- Wave 3 doc.ts additive helpers: `allocLayerId()`, `allocFrameId()`, `removeCel(key)`,
+  `celEntriesForFrame(frameId)`, `celEntriesForLayer(layerId)` — for structural commands.
+- `Compositor.frameCanvas` gained optional `float` param; `ghostCanvas(frame, tint, alpha)`
+  returns a REUSED canvas (draw before requesting the next ghost).
+- `playback:changed` has exactly one emitter: the Player. EditorState mirrors via
+  `syncPlaying` (non-emitting); `OnionConfig` + `onion:changed` added to contracts.

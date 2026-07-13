@@ -3,6 +3,14 @@ import { Bus } from '../core/bus';
 import { History } from '../core/history';
 import { SpriteDoc } from '../core/doc';
 import { AddPaletteColor } from '../core/commands/palette-ops';
+import {
+  AddFrame, DuplicateFrame, RemoveFrame, ReorderFrame, ReverseFrames, SetFrameDuration,
+} from '../core/commands/frames-ops';
+import {
+  AddLayer, MergeLayerDown, RemoveLayer, RenameLayer, ReorderLayer,
+  SetLayerOpacity, SetLayerVisible,
+} from '../core/commands/layers-ops';
+import { AddTag, RemoveTag, UpdateTag } from '../core/commands/tags-ops';
 import { Camera } from '../render/camera';
 import { Compositor } from '../render/compositor';
 import { Viewport } from '../render/viewport';
@@ -20,12 +28,15 @@ import { Shell } from '../ui/shell';
 import { Shortcuts } from '../ui/shortcuts';
 import { ToolbarPanel } from '../ui/panels/toolbar';
 import { ColorPanel } from '../ui/panels/color';
+import { LayersPanel } from '../ui/panels/layers';
 import { HistoryPanel } from '../ui/panels/history';
 import { StatusBar } from '../ui/panels/status';
+import { TimelinePanel } from '../ui/panels/timeline';
 import { Autosave } from '../io/autosave';
 import { installDragDrop, openFilePicker } from '../io/import';
 import { downloadBlob, exportPng } from '../io/exporters/png';
 import { EditorState } from './editor';
+import { Player } from './player';
 
 const THEME_KEY = 'sprite-lab:v2:theme';
 
@@ -58,6 +69,20 @@ export class App {
     const editor = new EditorState(doc, history, bus, tools);
     this.teardown.push(() => editor.dispose());
 
+    // Player is the sole 'playback:changed' emitter; the editor mirrors the
+    // flag (syncPlaying never re-emits) and pauses playback on pointer-down.
+    const player = new Player({
+      bus,
+      getDoc: () => editor.doc,
+      getFrame: () => editor.activeFrame,
+      setFrame: (i) => editor.setActiveFrame(i),
+    });
+    this.teardown.push(() => player.dispose());
+    editor.setPauseHook(() => player.pause());
+    this.teardown.push(bus.on('playback:changed', ({ playing }) => {
+      editor.syncPlaying(playing);
+    }));
+
     const camera = new Camera();
     const compositor = new Compositor(doc);
 
@@ -79,6 +104,7 @@ export class App {
 
     const undo = (): void => { if (history.canUndo) history.undo(); };
     const redo = (): void => { if (history.canRedo) history.redo(); };
+    let opacityDrag: { index: number; at: number } | null = null;
 
     const toolbar = new ToolbarPanel({
       host: slots.toolbar,
@@ -110,6 +136,52 @@ export class App {
     colorPanel.mount();
     this.teardown.push(() => colorPanel.unmount());
 
+    const layersPanel = new LayersPanel({
+      host: slots.side,
+      bus,
+      getDoc: () => editor.doc,
+      getLayer: () => editor.activeLayer,
+      setLayer: (i) => editor.setActiveLayer(i),
+      addLayer: () => {
+        const at = editor.activeLayer;
+        history.commit(new AddLayer(at));
+        editor.setActiveLayer(at + 1);
+      },
+      removeLayer: () => {
+        if (editor.doc.layers.length <= 1) {
+          bus.emit('status:message', { text: 'last layer' });
+          return;
+        }
+        history.commit(new RemoveLayer(editor.activeLayer));
+      },
+      moveLayer: (dir) => {
+        const from = editor.activeLayer;
+        const to = from + dir;
+        if (to < 0 || to >= editor.doc.layers.length) return;
+        history.commit(new ReorderLayer(from, to));
+        editor.setActiveLayer(to);
+      },
+      mergeDown: () => {
+        const at = editor.activeLayer;
+        if (at <= 0) return;
+        history.commit(new MergeLayerDown(at));
+        editor.setActiveLayer(at - 1);
+      },
+      // slider drags fire per input event — replace-last so a drag = one history entry
+      setOpacity: (i, opacity) => {
+        const now = performance.now();
+        if (opacityDrag && opacityDrag.index === i && now - opacityDrag.at < 600 && history.canUndo) {
+          history.undo();
+        }
+        history.commit(new SetLayerOpacity(i, opacity));
+        opacityDrag = { index: i, at: now };
+      },
+      setVisible: (i, visible) => history.commit(new SetLayerVisible(i, visible)),
+      rename: (i, name) => history.commit(new RenameLayer(i, name)),
+    });
+    layersPanel.mount();
+    this.teardown.push(() => layersPanel.unmount());
+
     const historyPanel = new HistoryPanel({
       host: slots.side,
       bus,
@@ -128,7 +200,72 @@ export class App {
     statusBar.mount();
     this.teardown.push(() => statusBar.unmount());
 
+    const addFrameAfterActive = (): void => {
+      const at = editor.activeFrame;
+      history.commit(new AddFrame(at));
+      editor.setActiveFrame(at + 1);
+    };
+    const duplicateActiveFrame = (): void => {
+      const at = editor.activeFrame;
+      history.commit(new DuplicateFrame(at));
+      editor.setActiveFrame(at + 1);
+    };
+    let activeTag: number | null = null;
+    const setRangeFromTag = (index: number | null): void => {
+      const tag = index === null ? undefined : editor.doc.tags[index];
+      activeTag = tag ? index : null;
+      player.setRange(tag ? { from: tag.from, to: tag.to, mode: tag.mode } : null);
+    };
+
+    const timeline = new TimelinePanel({
+      host: slots.timeline,
+      bus,
+      getDoc: () => editor.doc,
+      getFrame: () => editor.activeFrame,
+      setFrame: (i) => editor.setActiveFrame(i),
+      addFrame: addFrameAfterActive,
+      duplicateFrame: duplicateActiveFrame,
+      removeFrame: () => {
+        if (editor.doc.frames.length <= 1) {
+          bus.emit('status:message', { text: 'last frame' });
+          return;
+        }
+        history.commit(new RemoveFrame(editor.activeFrame));
+      },
+      reorderFrame: (from, to) => {
+        const active = editor.activeFrame;
+        history.commit(new ReorderFrame(from, to));
+        if (active === from) editor.setActiveFrame(to);
+        else if (from < active && to >= active) editor.setActiveFrame(active - 1);
+        else if (from > active && to <= active) editor.setActiveFrame(active + 1);
+      },
+      reverseFrames: () => history.commit(new ReverseFrames()),
+      setDuration: (i, ms) => history.commit(new SetFrameDuration(i, ms)),
+      isPlaying: () => player.playing,
+      togglePlay: () => player.toggle(),
+      getOnion: () => editor.onion,
+      setOnion: (config) => editor.setOnion(config),
+      addTag: (tag) => history.commit(new AddTag(tag)),
+      removeTag: (index) => {
+        history.commit(new RemoveTag(index));
+        if (activeTag === null) return;
+        if (index === activeTag) setRangeFromTag(null);
+        else if (index < activeTag) activeTag -= 1;
+      },
+      updateTag: (index, next) => {
+        history.commit(new UpdateTag(index, next));
+        if (index === activeTag) {
+          player.setRange({ from: next.from, to: next.to, mode: next.mode });
+        }
+      },
+      setRangeFromTag,
+    });
+    timeline.mount();
+    this.teardown.push(() => timeline.unmount());
+
     const adopt = (next: SpriteDoc): void => {
+      player.pause();
+      setRangeFromTag(null);
       editor.replaceDoc(next);
       compositor.setDoc(next);
       viewport.setDocSize(next.width, next.height);
@@ -249,6 +386,37 @@ export class App {
       keys: '.', desc: 'tiling preview', group: 'canvas', run: () => viewport.toggleTiling(),
     });
     shortcuts.register({ keys: 't', desc: 'toggle theme', group: 'app', run: toggleTheme });
+    const stepFrame = (dir: 1 | -1): void => {
+      const count = editor.doc.frames.length;
+      editor.setActiveFrame((editor.activeFrame + dir + count) % count);
+    };
+    shortcuts.register({
+      keys: 'arrowleft', desc: 'previous frame', group: 'anim', run: () => stepFrame(-1),
+    });
+    shortcuts.register({
+      keys: 'arrowright', desc: 'next frame', group: 'anim', run: () => stepFrame(1),
+    });
+    shortcuts.register({
+      keys: 'enter', desc: 'play / pause', group: 'anim', run: () => player.toggle(),
+    });
+    shortcuts.register({
+      keys: 'n', desc: 'new frame', group: 'anim', run: addFrameAfterActive,
+    });
+    shortcuts.register({
+      keys: 'shift+n', desc: 'duplicate frame', group: 'anim', run: duplicateActiveFrame,
+    });
+    shortcuts.register({
+      keys: 'k', desc: 'toggle onion skin', group: 'anim',
+      run: () => editor.setOnion({ ...editor.onion, enabled: !editor.onion.enabled }),
+    });
+    shortcuts.register({
+      keys: 'pageup', desc: 'layer up', group: 'anim',
+      run: () => editor.setActiveLayer(editor.activeLayer + 1),
+    });
+    shortcuts.register({
+      keys: 'pagedown', desc: 'layer down', group: 'anim',
+      run: () => editor.setActiveLayer(editor.activeLayer - 1),
+    });
     this.teardown.push(shortcuts.attach());
 
     if (import.meta.env.DEV) {

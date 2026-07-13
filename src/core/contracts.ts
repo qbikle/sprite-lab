@@ -177,6 +177,16 @@ export interface FloatBuffer {
 export type SymmetryMode = 'off' | 'x' | 'y' | 'quad';
 export type DitherMode = 'off' | 'bayer2' | 'bayer4';
 
+/* ── Wave 3 additions ── */
+
+/** Onion skin: ghost composites of neighbor frames under the active one. */
+export interface OnionConfig {
+  enabled: boolean;
+  past: number;      // frames behind (tinted --danger-ish red)
+  future: number;    // frames ahead (tinted teal)
+  opacity: number;   // 0..1 ghost strength
+}
+
 /** What the viewport needs from the editor — keeps render/ ignorant of app/. */
 export interface ViewportDelegate {
   readonly activeFrame: number;
@@ -189,6 +199,10 @@ export interface ViewportDelegate {
   readonly selection: SelectionState | null;
   /** Wave 2: mirror axes overlay. */
   readonly symmetry: SymmetryMode;
+  /** Wave 3: onion skin config (ghosts drawn when enabled && !playing). */
+  readonly onion: OnionConfig;
+  /** Wave 3: suppress onion + ants while animating. */
+  readonly playing: boolean;
   onPointer(kind: 'down' | 'move' | 'up' | 'cancel', p: PixelPt, e: PointerInfo): void;
   drawToolOverlay(o: OverlayCtx): void;
 }
@@ -213,6 +227,7 @@ export interface EventMap {
   'dither:changed': { mode: DitherMode };
   'tiling:changed': { on: boolean };
   'playback:changed': { playing: boolean };
+  'onion:changed': { config: OnionConfig };
   'camera:changed': undefined;
   'cursor:moved': { p: PixelPt | null };
   'theme:changed': { theme: ThemeName };
@@ -228,3 +243,5 @@ export interface EventMap {
 // M select-rect · Q lasso · V move · ⌘A select all · ⌘D deselect
 // ⌘C/⌘X/⌘V copy/cut/paste · S symmetry cycle · D dither cycle · . tiling preview
 // Esc: cancel float → clear selection → close overlays
+// Wave 3: ← / → prev/next frame · Enter play/pause · N new frame · ⇧N duplicate frame
+// K onion toggle · PgUp/PgDn active layer up/down

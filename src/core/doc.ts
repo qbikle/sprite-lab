@@ -108,6 +108,40 @@ export class SpriteDoc {
     this.cels.set(key, pixels);
   }
 
+  /** Delete a cel, returning its buffer (commands capture it for revert). */
+  removeCel(key: CelKey): Uint32Array | undefined {
+    const buf = this.cels.get(key);
+    if (buf) this.cels.delete(key);
+    return buf;
+  }
+
+  /** Existing [key, buffer] cel entries belonging to a frame (all layers). */
+  celEntriesForFrame(frameId: FrameId): Array<[CelKey, Uint32Array]> {
+    const suffix = `:${frameId}`;
+    const out: Array<[CelKey, Uint32Array]> = [];
+    for (const [key, buf] of this.cels) if (key.endsWith(suffix)) out.push([key, buf]);
+    return out;
+  }
+
+  /** Existing [key, buffer] cel entries belonging to a layer (all frames). */
+  celEntriesForLayer(layerId: LayerId): Array<[CelKey, Uint32Array]> {
+    const prefix = `${layerId}:`;
+    const out: Array<[CelKey, Uint32Array]> = [];
+    for (const [key, buf] of this.cels) if (key.startsWith(prefix)) out.push([key, buf]);
+    return out;
+  }
+
+  /** Allocate a fresh layer id. Commands allocate ONCE (first apply) and
+   *  reuse the captured id on redo — never re-allocate. */
+  allocLayerId(): LayerId {
+    return this.newLayerId();
+  }
+
+  /** Frame twin of allocLayerId — same capture-once rule. */
+  allocFrameId(): FrameId {
+    return this.newFrameId();
+  }
+
   /**
    * Flatten visible layers of a frame (opacity applied, straight-alpha "over").
    * With `into`+`rect`, composites only that sub-rect into the docW×docH buffer.

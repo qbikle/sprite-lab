@@ -4,8 +4,8 @@
  * ViewportDelegate so render/ stays ignorant of app/.
  */
 import type {
-  DitherMode, FloatBuffer, OverlayCtx, PixelPt, PointerInfo, Rect, Rgba, SelectionState,
-  StageBuffer, SymmetryMode, ToolCtx, ToolId, ViewportDelegate,
+  DitherMode, FloatBuffer, OnionConfig, OverlayCtx, PixelPt, PointerInfo, Rect, Rgba,
+  SelectionState, StageBuffer, SymmetryMode, ToolCtx, ToolId, ViewportDelegate,
 } from '../core/contracts';
 import type { Bus } from '../core/bus';
 import type { History } from '../core/history';
@@ -22,6 +22,7 @@ const RECENT_CAP = 10;
 
 const SYMMETRY_ORDER: readonly SymmetryMode[] = ['off', 'x', 'y', 'quad'];
 const DITHER_ORDER: readonly DitherMode[] = ['off', 'bayer2', 'bayer4'];
+const DEFAULT_ONION: OnionConfig = { enabled: false, past: 1, future: 1, opacity: 0.35 };
 
 interface ClipboardData { pixels: Uint32Array; w: number; h: number }
 
@@ -46,6 +47,9 @@ export class EditorState implements ViewportDelegate {
   private symmetryMode: SymmetryMode = 'off';
   private ditherMode: DitherMode = 'off';
   private clipboard: ClipboardData | null = null;
+  private onionConfig: OnionConfig = { ...DEFAULT_ONION };
+  private playingFlag = false;
+  private pauseHook: (() => void) | null = null;
 
   private stageBuf: StageBuffer | null = null;
   private stagedCount = 0;
@@ -68,8 +72,24 @@ export class EditorState implements ViewportDelegate {
     this.currentColor = EditorState.initialColor(doc);
     this.prevColor = this.currentColor;
 
-    this.unsubDocChanged = bus.on('doc:changed', () => {
+    // Structural undo/redo can strand active indices past the end — clamp,
+    // emitting the active events only when the value actually moved.
+    this.unsubDocChanged = bus.on('doc:changed', ({ scope }) => {
       this.flattenCache = null;
+      if (scope.kind === 'frames' || scope.kind === 'all') {
+        const max = Math.max(0, this.currentDoc.frames.length - 1);
+        if (this.frameIndex > max) {
+          this.frameIndex = max;
+          this.busRef.emit('frame:active', { index: max });
+        }
+      }
+      if (scope.kind === 'layers' || scope.kind === 'all') {
+        const max = Math.max(0, this.currentDoc.layers.length - 1);
+        if (this.layerIndex > max) {
+          this.layerIndex = max;
+          this.busRef.emit('layer:active', { index: max });
+        }
+      }
     });
 
     const self = this;
@@ -132,12 +152,49 @@ export class EditorState implements ViewportDelegate {
   get float(): FloatBuffer | null { return this.floatState; }
   get selection(): SelectionState | null { return this.selectionState; }
   get symmetry(): SymmetryMode { return this.symmetryMode; }
+  get onion(): OnionConfig { return this.onionConfig; }
+  setOnion(config: OnionConfig): void {
+    this.onionConfig = config;
+    this.busRef.emit('onion:changed', { config });
+  }
+  get playing(): boolean { return this.playingFlag; }
+  /** Mirror playback state from the Player — the sole 'playback:changed' emitter. */
+  syncPlaying(on: boolean): void {
+    this.playingFlag = on;
+  }
+  /** App injects player.pause; drawing while playing pauses first. */
+  setPauseHook(cb: () => void): void {
+    this.pauseHook = cb;
+  }
+
+  /** Switch active frame: anchor a live float, cancel a live stroke, then move. */
+  setActiveFrame(index: number): void {
+    const max = this.currentDoc.frames.length - 1;
+    const next = Math.max(0, Math.min(max, index));
+    if (next === this.frameIndex) return;
+    if (this.floatState) this.anchorFloat();
+    this.cancelStroke();
+    this.frameIndex = next;
+    this.flattenCache = null;
+    this.busRef.emit('frame:active', { index: next });
+  }
+
+  setActiveLayer(index: number): void {
+    const max = this.currentDoc.layers.length - 1;
+    const next = Math.max(0, Math.min(max, index));
+    if (next === this.layerIndex) return;
+    if (this.floatState) this.anchorFloat();
+    this.cancelStroke();
+    this.layerIndex = next;
+    this.busRef.emit('layer:active', { index: next });
+  }
 
   /** Route to active tool with the concrete ToolCtx. 'cancel' → tool.onCancel + clear stage. */
   onPointer(kind: 'down' | 'move' | 'up' | 'cancel', p: PixelPt, e: PointerInfo): void {
     const tool = this.strokeTool ?? this.activeTool;
     switch (kind) {
       case 'down':
+        if (this.playingFlag) this.pauseHook?.();
         if (this.floatState && this.activeTool.id !== 'move') this.anchorFloat();
         this.strokeTool = this.activeTool;
         this.activeTool.onDown(this.ctx, p, e);
@@ -162,16 +219,19 @@ export class EditorState implements ViewportDelegate {
     (this.strokeTool ?? this.activeTool).drawOverlay(o);
   }
 
+  private cancelStroke(): void {
+    if (!this.strokeTool) return;
+    this.strokeTool.onCancel(this.ctx);
+    this.strokeTool = null;
+    this.clearStage();
+    this.flushPending();
+  }
+
   setTool(id: ToolId): void {
     if (id === this.currentToolId) return;
     const next = this.allTools.find((t) => t.id === id);
     if (!next) return;
-    if (this.strokeTool) {
-      this.strokeTool.onCancel(this.ctx);
-      this.strokeTool = null;
-      this.clearStage();
-      this.flushPending();
-    }
+    this.cancelStroke();
     if (this.currentToolId === 'move' && this.floatState) this.anchorFloat();
     this.activeTool = next;
     this.currentToolId = id;
@@ -313,6 +373,10 @@ export class EditorState implements ViewportDelegate {
     this.floatState = null;
     this.symmetryMode = 'off';
     this.ditherMode = 'off';
+    this.onionConfig = { ...DEFAULT_ONION };
+    // App pauses the Player before adopting a doc — it owns the
+    // 'playback:changed' emission; here we only mirror the reset.
+    this.playingFlag = false;
     this.currentDoc = doc;
     this.historyRef.replaceDoc(doc);
     this.frameIndex = 0;
@@ -325,6 +389,9 @@ export class EditorState implements ViewportDelegate {
     this.busRef.emit('float:changed');
     this.busRef.emit('symmetry:changed', { mode: 'off' });
     this.busRef.emit('dither:changed', { mode: 'off' });
+    this.busRef.emit('frame:active', { index: 0 });
+    this.busRef.emit('layer:active', { index: 0 });
+    this.busRef.emit('onion:changed', { config: this.onionConfig });
   }
 
   dispose(): void {
