@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PixelPt, PointerInfo, Rgba, ToolCtx } from '../../src/core/contracts';
-import { EllipseTool } from '../../src/tools/ellipse';
+import { EllipseTool, plotEllipseRect } from '../../src/tools/ellipse';
 import { LineTool } from '../../src/tools/line';
 import { RectTool } from '../../src/tools/rect';
 import type { Tool } from '../../src/tools/tool';
@@ -22,6 +22,7 @@ function makeCtx(w: number, h: number, brushSize = 1): Harness {
     color: C,
     brushSize,
     inBounds: (p: PixelPt) => p.x >= 0 && p.y >= 0 && p.x < w && p.y < h,
+    symmetrySeeds: (p: PixelPt) => [p],
     selection: null,
     setSelection: () => {},
     float: null,
@@ -195,6 +196,39 @@ describe('EllipseTool', () => {
       if (first === undefined || last === undefined) continue;
       expect(xs.length).toBe(last - first + 1);
     }
+  });
+});
+
+describe('plotEllipseRect golden — 2-wide-box tip completion', () => {
+  // The finishing loop deliberately uses `<=` where Zingl has `<`: without it,
+  // 2-wide boxes (a=1) lose their tip rows. These goldens pin that deviation.
+  const points = (x0: number, y0: number, x1: number, y1: number): Set<string> => {
+    const s = new Set<string>();
+    plotEllipseRect(x0, y0, x1, y1, (x, y) => s.add(`${x},${y}`));
+    return s;
+  };
+
+  it('2-wide boxes cover both columns on every row, tips included', () => {
+    for (const y1 of [4, 6]) {
+      const s = points(0, 0, 1, y1);
+      for (let y = 0; y <= y1; y++) {
+        expect(s.has(`0,${y}`)).toBe(true);
+        expect(s.has(`1,${y}`)).toBe(true);
+      }
+      expect(s.size).toBe(2 * (y1 + 1));
+    }
+  });
+
+  it('golden point set for the 2×3 box', () => {
+    expect([...points(2, 1, 3, 3)].sort()).toEqual(
+      ['2,1', '2,2', '2,3', '3,1', '3,2', '3,3'].sort(),
+    );
+  });
+
+  it('golden point set for a 5×3 box stays exact', () => {
+    expect([...points(0, 0, 4, 2)].sort()).toEqual(
+      ['1,0', '2,0', '3,0', '0,1', '4,1', '1,2', '2,2', '3,2'].sort(),
+    );
   });
 });
 

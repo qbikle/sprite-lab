@@ -79,6 +79,21 @@ describe('makeRamp', () => {
     expect(makeRamp(TEAL, 9)).toEqual(makeRamp(TEAL, 9));
   });
 
+  it('achromatic base hits the d=0 branch: middle stays gray, shadows gain tint', () => {
+    const ramp = makeRamp(packRgba(128, 128, 128, 255), 5);
+    expect(ramp).toHaveLength(5);
+    const [mr, mg, mb, ma] = unpackRgba(ramp[2] ?? 0);
+    expect(ma).toBe(255);
+    expect(mr).toBe(mg);
+    expect(mg).toBe(mb);
+    for (let i = 1; i < ramp.length; i++) {
+      expect(lightness(ramp[i] ?? 0)).toBeGreaterThan(lightness(ramp[i - 1] ?? 0));
+    }
+    // darkest step picked up the +8 saturation shadow drift — no longer pure gray
+    const [dr, dg, db] = unpackRgba(ramp[0] ?? 0);
+    expect(Math.max(dr, dg, db) - Math.min(dr, dg, db)).toBeGreaterThan(0);
+  });
+
   it('handles extreme bases without leaving 0..255 range', () => {
     for (const base of [packRgba(0, 0, 0, 255), packRgba(255, 255, 255, 255)]) {
       const ramp = makeRamp(base, 9);

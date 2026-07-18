@@ -88,6 +88,26 @@ describe('AddFrame', () => {
     h.redo();
     expect(must(doc.frames[1]).id).toBe(second);
   });
+
+  it('sizeBytes grows to cover cels captured by a later revert', () => {
+    const doc = SpriteDoc.blank(4, 4, 't');
+    const h = new History(doc, new Bus());
+    const add = new AddFrame(0);
+    h.commit(add);
+    expect(add.sizeBytes).toBe(128);
+
+    const key = doc.celKeyAt(0, 1);
+    const blank = new Uint32Array(16);
+    const red = new Uint32Array(16);
+    red[0] = RED;
+    h.commit(must(PixelPatch.fromBuffers(key, 4, 4, blank, red, 'paint')));
+
+    h.undo(); // undo paint — leaves a blank cel on the added frame
+    h.undo(); // undo add — captures that cel
+    expect(add.sizeBytes).toBe(128 + 4 * 4 * 4);
+    h.redo();
+    expect(add.sizeBytes).toBe(128 + 4 * 4 * 4);
+  });
 });
 
 describe('DuplicateFrame', () => {

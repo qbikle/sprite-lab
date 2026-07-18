@@ -28,21 +28,21 @@ export class Camera implements CameraView {
     return { x: px, y: py };
   }
 
-  /** Step through STOPS keeping the screen pivot fixed on the same doc point. */
+  /** Step through STOPS keeping the screen pivot fixed on the same doc point.
+   *  From an off-stop zoom (pinch), the first stop strictly past the current
+   *  value wins — 3.9 + up lands on 4, never skipping to 6. */
   zoomStep(dir: 1 | -1, pivotX: number, pivotY: number): void {
-    const stops = Camera.STOPS;
-    let nearest = 0;
-    let best = Infinity;
-    for (let i = 0; i < stops.length; i++) {
-      const s = stops[i];
-      if (s === undefined) continue;
-      const dist = Math.abs(s - this.zoom);
-      if (dist < best) {
-        best = dist;
-        nearest = i;
+    let next: number | undefined;
+    if (dir > 0) {
+      for (const s of Camera.STOPS) {
+        if (s > this.zoom) { next = s; break; }
+      }
+    } else {
+      for (const s of Camera.STOPS) {
+        if (s < this.zoom) next = s;
+        else break;
       }
     }
-    const next = stops[Math.min(stops.length - 1, Math.max(0, nearest + dir))];
     if (next === undefined) return;
     this.applyZoom(next, pivotX, pivotY);
   }

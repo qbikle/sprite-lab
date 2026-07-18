@@ -21,6 +21,11 @@ interface RowEntry {
 
 const STRIP_CELLS = 6;
 const DEFAULT_FPS = 8;
+/** Floor for the frame w/h inputs — typing "16" passes through "1", and a
+ *  1px grid over a big sheet means ~1M slice objects. */
+const MIN_FRAME = 4;
+const MAX_FRAME = 512;
+const RESLICE_DEBOUNCE_MS = 200;
 
 function extractPalette(pixels: Uint32Array): Rgba[] {
   const counts = new Map<Rgba, number>();
@@ -68,12 +73,21 @@ export class SheetImporter {
   private frameH = 32;
   private scale = 1;
   private entries: RowEntry[] = [];
+  private resliceTimer: number | null = null;
 
+  /** Modal capture guard: Esc closes; typing inside the dialog passes through;
+   *  everything else stops here so app shortcuts (Enter/N/…) stay inert. */
   private readonly onKeyDown = (e: KeyboardEvent): void => {
-    if (e.key !== 'Escape') return;
-    e.preventDefault();
-    e.stopPropagation();
-    this.close();
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      this.close();
+      return;
+    }
+    const t = e.target;
+    const typing = t instanceof HTMLInputElement
+      && this.overlay !== null && this.overlay.contains(t);
+    if (!typing) e.stopPropagation();
   };
 
   constructor(opts: ImporterOpts) {
@@ -118,6 +132,10 @@ export class SheetImporter {
   private close(): void {
     if (!this.overlay) return;
     document.removeEventListener('keydown', this.onKeyDown, true);
+    if (this.resliceTimer !== null) {
+      window.clearTimeout(this.resliceTimer);
+      this.resliceTimer = null;
+    }
     this.overlay.remove();
     this.overlay = null;
     this.srcCanvas = null;
@@ -173,8 +191,8 @@ export class SheetImporter {
 
     const dims = document.createElement('div');
     dims.className = 'sl-importer-dims';
-    const wInput = numberInput('sl-importer-num', this.frameW, 1, 512);
-    const hInput = numberInput('sl-importer-num', this.frameH, 1, 512);
+    const wInput = numberInput('sl-importer-num', this.frameW, MIN_FRAME, MAX_FRAME);
+    const hInput = numberInput('sl-importer-num', this.frameH, MIN_FRAME, MAX_FRAME);
     const wLabel = document.createElement('label');
     wLabel.className = 'sl-importer-dim';
     wLabel.append('frame w ', wInput);
@@ -182,18 +200,33 @@ export class SheetImporter {
     hLabel.className = 'sl-importer-dim';
     hLabel.append('frame h ', hInput);
     dims.append(wLabel, hLabel);
-    wInput.addEventListener('input', () => {
-      const v = Math.floor(Number(wInput.value));
-      if (!Number.isFinite(v) || v < 1) return;
-      this.frameW = v;
-      this.reslice();
-    });
-    hInput.addEventListener('input', () => {
-      const v = Math.floor(Number(hInput.value));
-      if (!Number.isFinite(v) || v < 1) return;
-      this.frameH = v;
-      this.reslice();
-    });
+    // Typing reslices debounced with the size clamped ≥MIN_FRAME; Enter/blur
+    // (change) applies immediately.
+    const wireDim = (input: HTMLInputElement, apply: (v: number) => void): void => {
+      const parse = (): number | null => {
+        const v = Math.floor(Number(input.value));
+        if (!Number.isFinite(v) || v < 1) return null;
+        return Math.max(MIN_FRAME, Math.min(MAX_FRAME, v));
+      };
+      input.addEventListener('input', () => {
+        const v = parse();
+        if (v === null) return;
+        apply(v);
+        this.queueReslice();
+      });
+      input.addEventListener('change', () => {
+        const v = parse();
+        if (v === null) return;
+        input.value = String(v);
+        apply(v);
+        this.resliceNow();
+      });
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') input.blur();
+      });
+    };
+    wireDim(wInput, (v) => { this.frameW = v; });
+    wireDim(hInput, (v) => { this.frameH = v; });
 
     const summary = document.createElement('div');
     summary.className = 'sl-importer-summary';
@@ -223,6 +256,22 @@ export class SheetImporter {
     document.body.appendChild(overlay);
     this.overlay = overlay;
     panel.focus();
+  }
+
+  private queueReslice(): void {
+    if (this.resliceTimer !== null) window.clearTimeout(this.resliceTimer);
+    this.resliceTimer = window.setTimeout(() => {
+      this.resliceTimer = null;
+      this.reslice();
+    }, RESLICE_DEBOUNCE_MS);
+  }
+
+  private resliceNow(): void {
+    if (this.resliceTimer !== null) {
+      window.clearTimeout(this.resliceTimer);
+      this.resliceTimer = null;
+    }
+    this.reslice();
   }
 
   private reslice(): void {

@@ -3,6 +3,14 @@
 import type { OverlayCtx, PixelPt, PointerInfo, Rgba, ToolCtx, ToolId } from '../core/contracts';
 import { stampLine } from './brush';
 
+/** Snap b so |dx| == |dy| from a — shared ⇧ constraint (square/circle/marquee). */
+export function constrainSquare(a: PixelPt, b: PixelPt): PixelPt {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const d = Math.max(Math.abs(dx), Math.abs(dy));
+  return { x: a.x + Math.sign(dx) * d, y: a.y + Math.sign(dy) * d };
+}
+
 export abstract class Tool {
   abstract readonly id: ToolId;
   abstract readonly label: string;

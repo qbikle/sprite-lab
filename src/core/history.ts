@@ -3,11 +3,18 @@ import type { Command } from './contracts';
 import type { Bus } from './bus';
 import type { SpriteDoc } from './doc';
 
+/** cmd.sizeBytes can grow after commit (getter-backed captures) — each entry
+ *  remembers the bytes it was charged so removal always subtracts exactly that. */
+interface Entry {
+  cmd: Command;
+  bytes: number;
+}
+
 export class History {
   private doc: SpriteDoc;
   private readonly bus: Bus;
   private readonly budgetBytes: number;
-  private stack: Command[] = [];
+  private stack: Entry[] = [];
   private cursor = 0;
   private totalBytes = 0;
 
@@ -24,17 +31,18 @@ export class History {
     if (this.cursor < this.stack.length) {
       for (let i = this.cursor; i < this.stack.length; i++) {
         const dropped = this.stack[i];
-        if (dropped) this.totalBytes -= dropped.sizeBytes;
+        if (dropped) this.totalBytes -= dropped.bytes;
       }
       this.stack.length = this.cursor;
     }
-    this.stack.push(cmd);
+    const bytes = cmd.sizeBytes;
+    this.stack.push({ cmd, bytes });
     this.cursor = this.stack.length;
-    this.totalBytes += cmd.sizeBytes;
+    this.totalBytes += bytes;
     while (this.totalBytes > this.budgetBytes && this.stack.length > 1) {
       const evicted = this.stack.shift();
       if (!evicted) break;
-      this.totalBytes -= evicted.sizeBytes;
+      this.totalBytes -= evicted.bytes;
       this.cursor -= 1;
     }
     this.bus.emit('doc:changed', { scope: cmd.dirty });
@@ -43,21 +51,23 @@ export class History {
 
   undo(): void {
     if (this.cursor <= 0) return;
-    const cmd = this.stack[this.cursor - 1];
-    if (!cmd) return;
+    const entry = this.stack[this.cursor - 1];
+    if (!entry) return;
     this.cursor -= 1;
-    cmd.revert(this.doc);
-    this.bus.emit('doc:changed', { scope: cmd.dirty });
+    entry.cmd.revert(this.doc);
+    this.recharge(entry);
+    this.bus.emit('doc:changed', { scope: entry.cmd.dirty });
     this.emitHistoryChanged();
   }
 
   redo(): void {
     if (this.cursor >= this.stack.length) return;
-    const cmd = this.stack[this.cursor];
-    if (!cmd) return;
+    const entry = this.stack[this.cursor];
+    if (!entry) return;
     this.cursor += 1;
-    cmd.apply(this.doc);
-    this.bus.emit('doc:changed', { scope: cmd.dirty });
+    entry.cmd.apply(this.doc);
+    this.recharge(entry);
+    this.bus.emit('doc:changed', { scope: entry.cmd.dirty });
     this.emitHistoryChanged();
   }
 
@@ -69,9 +79,14 @@ export class History {
     return this.cursor < this.stack.length;
   }
 
+  /** The command undo() would revert next — null at the pristine cursor. */
+  peekUndo(): Command | null {
+    return this.stack[this.cursor - 1]?.cmd ?? null;
+  }
+
   /** Oldest→newest labels + cursor, for the (Wave 2) history panel. */
   entries(): { labels: readonly string[]; cursor: number } {
-    return { labels: this.stack.map((c) => c.label), cursor: this.cursor };
+    return { labels: this.stack.map((e) => e.cmd.label), cursor: this.cursor };
   }
 
   /** Undo/redo until the cursor sits at index (0 = pristine, length = latest). */
@@ -88,6 +103,13 @@ export class History {
     this.cursor = 0;
     this.totalBytes = 0;
     this.emitHistoryChanged();
+  }
+
+  /** Re-read sizeBytes after apply/revert — captures taken there get charged. */
+  private recharge(entry: Entry): void {
+    const bytes = entry.cmd.sizeBytes;
+    this.totalBytes += bytes - entry.bytes;
+    entry.bytes = bytes;
   }
 
   private emitHistoryChanged(): void {

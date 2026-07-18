@@ -176,3 +176,19 @@ never touch the doc, the canvas, or the DOM directly.
   returns a REUSED canvas (draw before requesting the next ghost).
 - `playback:changed` has exactly one emitter: the Player. EditorState mirrors via
   `syncPlaying` (non-emitting); `OnionConfig` + `onion:changed` added to contracts.
+- Wave 7 additions: `ToolCtx.symmetrySeeds(p)` (mirrored fill seeds — stroke tools still
+  get expansion inside `stage()`); `History.peekUndo()` (identity check for UI coalescing);
+  `DropFloat` command (undoable cut of a live float); `pixels.overRgba`/`overRgbaScaled`
+  are THE src-over kernel (compositor/doc/commands all import it — never re-derive);
+  `sheetFileName(base)` is the single source of the sheet PNG filename (JSON + download);
+  `canEncodeWebp()` is now an async memoized real-encode probe; `installDragDrop`/
+  `openFilePicker` take `onStatus?` for user-facing IO errors.
+- History stores per-entry byte ledgers re-read after every apply/revert — commands whose
+  `sizeBytes` grows after commit (AddFrame/AddLayer capture-on-revert) stay budget-exact.
+- Autosave payloads are enveloped `{v, savedAt, doc}` in BOTH stores; restore takes the
+  newer stamp (legacy bare docs read as stamp 0). Flush on pagehide/visibilitychange too.
+- Ghost canvases are cached per frame keyed (tint, alpha), invalidated per-frame from cel
+  dirty scopes; `{kind:'selection'}` scopes do NOT invalidate composites (pixels never
+  change under them — pinned by compositor tests).
+- ARCHITECTURE's old "structural ops = transactions" line is a known deviation: History
+  has no composite-command support; MergeLayerDown et al are monolithic commands instead.

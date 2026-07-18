@@ -1,7 +1,8 @@
 /** Rect marquee — drag a box, ⇧ square; on up → ctx.setSelection (click = deselect). */
 import type { OverlayCtx, PixelPt, PointerInfo, Rect, ToolCtx, ToolId } from '../core/contracts';
 import { maskFromRect } from '../core/selection';
-import { Tool } from './tool';
+import { themeColors } from '../render/theme';
+import { Tool, constrainSquare } from './tool';
 
 export class SelectRectTool extends Tool {
   readonly id: ToolId = 'select-rect';
@@ -53,11 +54,20 @@ export class SelectRectTool extends Tool {
     const tl = o.camera.docToScreen({ x: r.x, y: r.y });
     const br = o.camera.docToScreen({ x: r.x + r.w, y: r.y + r.h });
     const g = o.g;
+    // same device-pixel snap as the overlays' ants, so the handoff doesn't jump
+    const dpr = window.devicePixelRatio || 1;
+    const snap = (v: number): number => Math.round(v * dpr) / dpr;
+    const half = 0.5 / dpr;
+    const x = snap(tl.x);
+    const y = snap(tl.y);
+    const w = snap(br.x) - x;
+    const h = snap(br.y) - y;
+    if (w <= 0 || h <= 0) return;
     g.save();
-    g.strokeStyle = accentColor();
-    g.lineWidth = 1;
+    g.strokeStyle = themeColors().accent;
+    g.lineWidth = 1 / dpr;
     g.setLineDash([4, 3]);
-    g.strokeRect(tl.x + 0.5, tl.y + 0.5, br.x - tl.x - 1, br.y - tl.y - 1);
+    g.strokeRect(x + half, y + half, w - 2 * half, h - 2 * half);
     g.restore();
   }
 
@@ -71,15 +81,4 @@ function box(a: PixelPt, b: PixelPt): Rect {
   const x = Math.min(a.x, b.x);
   const y = Math.min(a.y, b.y);
   return { x, y, w: Math.max(a.x, b.x) - x + 1, h: Math.max(a.y, b.y) - y + 1 };
-}
-
-function constrainSquare(a: PixelPt, b: PixelPt): PixelPt {
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const d = Math.max(Math.abs(dx), Math.abs(dy));
-  return { x: a.x + Math.sign(dx) * d, y: a.y + Math.sign(dy) * d };
-}
-
-function accentColor(): string {
-  return getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#ffb454';
 }

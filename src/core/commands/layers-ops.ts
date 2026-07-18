@@ -2,38 +2,22 @@
  *  Ids and captured state are allocated ONCE (first apply) and reused on redo. */
 import type { CelKey, Command, DirtyScope, Layer, LayerId } from '../contracts';
 import type { SpriteDoc } from '../doc';
-import { packRgba } from '../pixels';
+import { moveItem } from '../doc';
+import { overRgbaScaled } from '../pixels';
 
 type CelEntry = [CelKey, Uint32Array];
 
-function moveItem<T>(arr: T[], from: number, to: number, ctx: string): void {
-  const [item] = arr.splice(from, 1);
-  if (item === undefined) throw new RangeError(`${ctx}: bad index ${from}`);
-  arr.splice(to, 0, item);
-}
-
-/** Straight-alpha src-over in place, src alpha scaled by opacity — same math
- *  as SpriteDoc.flattenFrame (merge-down bakes the top layer's opacity in). */
+/** Src-over in place, src alpha scaled by opacity — same math as
+ *  SpriteDoc.flattenFrame (merge-down bakes the top layer's opacity in). */
 function over(dst: Uint32Array, src: Uint32Array, opacity: number): void {
   for (let i = 0; i < dst.length; i++) {
-    const s = src[i] ?? 0;
-    const sa = (((s >>> 24) & 0xff) / 255) * opacity;
-    if (sa <= 0) continue;
-    const d = dst[i] ?? 0;
-    const da = ((d >>> 24) & 0xff) / 255;
-    const oa = sa + da * (1 - sa);
-    const dw = da * (1 - sa);
-    const r = Math.round(((s & 0xff) * sa + (d & 0xff) * dw) / oa);
-    const g = Math.round((((s >>> 8) & 0xff) * sa + ((d >>> 8) & 0xff) * dw) / oa);
-    const b = Math.round((((s >>> 16) & 0xff) * sa + ((d >>> 16) & 0xff) * dw) / oa);
-    dst[i] = packRgba(r, g, b, Math.round(oa * 255));
+    dst[i] = overRgbaScaled(dst[i] ?? 0, src[i] ?? 0, opacity);
   }
 }
 
 /** Insert a blank layer above `aboveIndex`. */
 export class AddLayer implements Command {
   readonly label = 'add layer';
-  readonly sizeBytes = 128;
   readonly dirty: DirtyScope = { kind: 'layers' };
 
   private readonly aboveIndex: number;
@@ -44,6 +28,12 @@ export class AddLayer implements Command {
   constructor(aboveIndex: number, name?: string) {
     this.aboveIndex = aboveIndex;
     this.name = name;
+  }
+
+  get sizeBytes(): number {
+    let n = 128;
+    for (const [, buf] of this.cels) n += buf.byteLength;
+    return n;
   }
 
   apply(doc: SpriteDoc): void {

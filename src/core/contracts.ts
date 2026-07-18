@@ -130,6 +130,10 @@ export interface ToolCtx {
   pickColor(p: PixelPt): Rgba;
   setColor(c: Rgba): void;
 
+  /** p expanded through the active symmetry (1/2/4 points, deduped) — for
+   *  seed-based tools like fill; stroke tools get this inside stage(). */
+  symmetrySeeds(p: PixelPt): readonly PixelPt[];
+
   /** Stage a replace-write at p (color 0 stages an erase). No-op out of bounds. */
   stage(p: PixelPt, color: Rgba): void;
   clearStage(): void;
@@ -242,6 +246,6 @@ export interface EventMap {
 // Wave 2: L line · R rect · O ellipse (⇧ = square/circle, ⌥ = filled)
 // M select-rect · Q lasso · V move · ⌘A select all · ⌘D deselect
 // ⌘C/⌘X/⌘V copy/cut/paste · S symmetry cycle · D dither cycle · . tiling preview
-// Esc: cancel float → clear selection → close overlays
+// Esc: anchor float → clear selection → close overlays
 // Wave 3: ← / → prev/next frame · Enter play/pause · N new frame · ⇧N duplicate frame
 // K onion toggle · PgUp/PgDn active layer up/down

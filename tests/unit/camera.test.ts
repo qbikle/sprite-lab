@@ -61,13 +61,40 @@ describe('zoomStep', () => {
     expect(c.zoom).toBe(8);
   });
 
-  it('snaps from a non-stop zoom to the nearest stop ±1', () => {
-    const up = cam(0, 0, 4.9);
+  it('steps from an off-stop zoom to the first stop past it — never skipping', () => {
+    const up = cam(0, 0, 3.9);
     up.zoomStep(1, 0, 0);
-    expect(up.zoom).toBe(6);
+    expect(up.zoom).toBe(4); // nearest-±1 used to skip to 6
+    const up2 = cam(0, 0, 4.1);
+    up2.zoomStep(1, 0, 0);
+    expect(up2.zoom).toBe(6);
     const down = cam(0, 0, 5.2);
     down.zoomStep(-1, 0, 0);
     expect(down.zoom).toBe(4);
+    const down2 = cam(0, 0, 3.9);
+    down2.zoomStep(-1, 0, 0);
+    expect(down2.zoom).toBe(3);
+  });
+
+  it('off-stop just past a stop lands on the adjacent stop each way', () => {
+    const up = cam(0, 0, 8.0001);
+    up.zoomStep(1, 0, 0);
+    expect(up.zoom).toBe(12);
+    const down = cam(0, 0, 8.0001);
+    down.zoomStep(-1, 0, 0);
+    expect(down.zoom).toBe(8);
+    const below = cam(0, 0, 7.9999);
+    below.zoomStep(1, 0, 0);
+    expect(below.zoom).toBe(8);
+  });
+
+  it('off-stop beyond either end clamps to the boundary stop', () => {
+    const lo = cam(0, 0, 0.3);
+    lo.zoomStep(-1, 0, 0);
+    expect(lo.zoom).toBe(0.25);
+    const hi = cam(0, 0, 50);
+    hi.zoomStep(1, 0, 0);
+    expect(hi.zoom).toBe(64);
   });
 
   it('clamps at both ends of STOPS', () => {

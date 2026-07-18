@@ -14,6 +14,8 @@ export interface LayersOpts {
   moveLayer(dir: 1 | -1): void; // active layer up/down in the stack
   mergeDown(): void;
   setOpacity(index: number, opacity: number): void;
+  /** Pointer left the opacity slider — ends the replace-last coalescing window. */
+  endOpacityDrag(): void;
   setVisible(index: number, visible: boolean): void;
   rename(index: number, name: string): void;
 }
@@ -114,6 +116,7 @@ export class LayersPanel {
   private endSlide(): void {
     if (!this.sliding) return;
     this.sliding = false;
+    this.opts.endOpacityDrag();
     if (this.pendingRefresh) {
       this.pendingRefresh = false;
       this.rebuild();
@@ -223,8 +226,12 @@ export class LayersPanel {
       else this.rebuild();
     };
     input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') input.blur();
-      else if (e.key === 'Escape') finish(false);
+      if (e.key === 'Enter') {
+        input.blur();
+      } else if (e.key === 'Escape') {
+        e.stopPropagation(); // cancel the rename only — never the global Esc chain
+        finish(false);
+      }
     });
     input.addEventListener('blur', () => finish(true));
     input.addEventListener('click', (e) => e.stopPropagation());

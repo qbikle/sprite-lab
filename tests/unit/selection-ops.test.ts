@@ -1,7 +1,7 @@
 /** core/commands/selection-ops — selection/float commands + history integration. */
 import { describe, expect, it } from 'vitest';
 import type { SelectionHost } from '../../src/core/commands/selection-ops';
-import { AnchorFloat, LiftFloat, PasteFloat, SetSelection } from '../../src/core/commands/selection-ops';
+import { AnchorFloat, DropFloat, LiftFloat, PasteFloat, SetSelection } from '../../src/core/commands/selection-ops';
 import { Bus } from '../../src/core/bus';
 import { SpriteDoc } from '../../src/core/doc';
 import { History } from '../../src/core/history';
@@ -44,7 +44,7 @@ describe('SetSelection', () => {
 
     const cmd = new SetSelection(host, b, 'select rect');
     expect(cmd.label).toBe('select rect');
-    expect(cmd.sizeBytes).toBe(b.mask.byteLength + 64);
+    expect(cmd.sizeBytes).toBe(a.mask.byteLength + b.mask.byteLength + 64);
     expect(cmd.dirty).toEqual({ kind: 'selection' });
 
     cmd.apply(doc);
@@ -62,11 +62,18 @@ describe('SetSelection', () => {
     host.selection = a;
 
     const cmd = new SetSelection(host, null, 'deselect');
-    expect(cmd.sizeBytes).toBe(64);
+    expect(cmd.sizeBytes).toBe(a.mask.byteLength + 64);
     cmd.apply(doc);
     expect(host.selection).toBeNull();
     cmd.revert(doc);
     expect(host.selection).toBe(a);
+  });
+
+  it('counts only the next mask when there is no prior selection', () => {
+    const host = makeHost();
+    const b = must(maskFromRect({ x: 0, y: 0, w: 2, h: 2 }, 8, 8));
+    expect(new SetSelection(host, b, 'select').sizeBytes).toBe(b.mask.byteLength + 64);
+    expect(new SetSelection(host, null, 'deselect').sizeBytes).toBe(64);
   });
 });
 
@@ -84,7 +91,7 @@ describe('LiftFloat', () => {
     host.selection = sel;
 
     const cmd = new LiftFloat(host, key, 8, 8);
-    expect(cmd.sizeBytes).toBe(3 * 2 * 2 * 4 + 128);
+    expect(cmd.sizeBytes).toBe(3 * 2 * 2 * 4 + sel.mask.byteLength + 128);
     expect(cmd.dirty).toEqual({ kind: 'cels', cels: [{ key, rect: { x: 1, y: 1, w: 2, h: 2 } }] });
 
     cmd.apply(doc);
@@ -246,6 +253,71 @@ describe('PasteFloat', () => {
     cmd.apply(doc);
     expect(must(host.float).rect).toEqual({ x: 3, y: 2, w: 2, h: 2 });
     expect([...must(host.float).pixels]).toEqual([RED, GREEN, BLUE, WHITE]);
+  });
+});
+
+describe('DropFloat', () => {
+  it('apply→revert→apply round-trips with a redo-stable capture', () => {
+    const doc = SpriteDoc.blank(8, 8, 't');
+    const host = makeHost();
+    host.float = { pixels: new Uint32Array([RED, GREEN]), rect: { x: 2, y: 3, w: 2, h: 1 } };
+
+    const cmd = new DropFloat(host);
+    expect(cmd.label).toBe('cut float');
+    expect(cmd.dirty).toEqual({ kind: 'selection' });
+    expect(cmd.sizeBytes).toBe(64);
+
+    cmd.apply(doc);
+    expect(host.float).toBeNull();
+    expect(cmd.sizeBytes).toBe(2 * 4 + 64);
+
+    cmd.revert(doc);
+    const restored = must(host.float);
+    expect(restored.rect).toEqual({ x: 2, y: 3, w: 2, h: 1 });
+    expect([...restored.pixels]).toEqual([RED, GREEN]);
+
+    restored.rect.x = 7;
+    restored.pixels[0] = 0;
+    cmd.apply(doc);
+    expect(host.float).toBeNull();
+    cmd.revert(doc);
+    expect(must(host.float).rect).toEqual({ x: 2, y: 3, w: 2, h: 1 });
+    expect([...must(host.float).pixels]).toEqual([RED, GREEN]);
+  });
+
+  it('tolerates a null float (no-op pair)', () => {
+    const doc = SpriteDoc.blank(8, 8, 't');
+    const host = makeHost();
+    const cmd = new DropFloat(host);
+    cmd.apply(doc);
+    expect(host.float).toBeNull();
+    cmd.revert(doc);
+    expect(host.float).toBeNull();
+    expect(cmd.sizeBytes).toBe(64);
+  });
+
+  it('lift → drop round-trips through History undo/redo', () => {
+    const { doc, key, cel } = seededDoc();
+    const original = new Uint32Array(cel);
+    const h = new History(doc, new Bus());
+    const host = makeHost();
+    host.selection = must(maskFromRect({ x: 1, y: 1, w: 2, h: 2 }, 8, 8));
+
+    h.commit(new LiftFloat(host, key, 8, 8));
+    h.commit(new DropFloat(host));
+    const lifted = new Uint32Array(cel);
+    expect(host.float).toBeNull();
+
+    h.undo();
+    expect([...must(host.float).pixels]).toEqual([RED, GREEN, BLUE, WHITE]);
+    h.undo();
+    expect([...cel]).toEqual([...original]);
+    expect(host.float).toBeNull();
+
+    h.redo();
+    h.redo();
+    expect([...cel]).toEqual([...lifted]);
+    expect(host.float).toBeNull();
   });
 });
 

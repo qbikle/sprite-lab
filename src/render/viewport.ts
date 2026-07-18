@@ -8,6 +8,11 @@ import type { Bus } from '../core/bus';
 import type { Camera } from './camera';
 import type { Compositor } from './compositor';
 import { Overlays } from './overlays';
+import { invalidateThemeColors } from './theme';
+
+/** Wheel deltas normalized to css px per deltaMode: one zoom stop per ~100px. */
+const WHEEL_LINE_PX = 16;
+const WHEEL_STEP_PX = 100;
 
 export interface ViewportOpts {
   container: HTMLElement;
@@ -41,6 +46,8 @@ export class Viewport {
   private antTimer = 0;
   private hover: PixelPt | null = null;
   private spaceHeld = false;
+  private wheelAcc = 0;
+  private dprWatch: (() => void) | null = null;
 
   private panning = false;
   private panId = -1;
@@ -99,6 +106,12 @@ export class Viewport {
     this.listen(canvas, 'contextmenu', (e) => e.preventDefault());
     this.listenWin('keydown', (e) => this.onKey(e, true));
     this.listenWin('keyup', (e) => this.onKey(e, false));
+    // cmd+tab away mid-pan: no keyup ever arrives, so drop the held space
+    this.listenWin('blur', () => {
+      if (!this.spaceHeld) return;
+      this.spaceHeld = false;
+      if (this.canvas && !this.panning) this.canvas.style.cursor = '';
+    });
 
     this.disposers.push(this.bus.on('doc:changed', ({ scope }) => {
       this.compositor.invalidate(scope);
@@ -113,12 +126,18 @@ export class Viewport {
     this.disposers.push(this.bus.on('frame:active', () => this.requestRender()));
     this.disposers.push(this.bus.on('playback:changed', () => this.requestRender()));
     this.disposers.push(this.bus.on('theme:changed', () => {
+      invalidateThemeColors();
       this.buildChecker();
       this.requestRender();
     }));
 
     this.ro = new ResizeObserver(() => this.onResize());
     this.ro.observe(this.container);
+    this.armDprWatch();
+    this.disposers.push(() => {
+      this.dprWatch?.();
+      this.dprWatch = null;
+    });
     this.onResize();
   }
 
@@ -135,6 +154,9 @@ export class Viewport {
     this.ro = null;
     for (const d of this.disposers) d();
     this.disposers.length = 0;
+    this.touches.clear();
+    this.pinching = false;
+    this.pinchLast = null;
     this.canvas?.remove();
     this.canvas = null;
     this.g = null;
@@ -224,6 +246,7 @@ export class Viewport {
       float: this.delegate.float,
       symmetry: this.delegate.symmetry,
       antPhase: this.antPhase,
+      playing: this.delegate.playing,
     });
     this.delegate.drawToolOverlay(o);
     this.tickAnts();
@@ -231,7 +254,7 @@ export class Viewport {
 
   /** Onion ghosts under the composite (center tile only): past red then
    *  future teal, farthest→nearest so near ghosts sit on top. Skipped while
-   *  playing. Each ghost canvas is reused — drawn before the next request. */
+   *  playing. Ghost canvases are compositor-cached — drawn, never kept. */
   private drawGhosts(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number): void {
     const onion = this.delegate.onion;
     if (!onion.enabled || this.delegate.playing) return;
@@ -249,8 +272,10 @@ export class Viewport {
   }
 
   /** Slow marching-ants ticker: while a selection/float exists, advance the
-   *  dash phase (~8fps) and re-render; single timer, cleared on unmount. */
+   *  dash phase (~8fps) and re-render; single timer, cleared on unmount.
+   *  Idle while playing — ants are suppressed during playback. */
   private tickAnts(): void {
+    if (this.delegate.playing) return;
     if (!this.delegate.selection && !this.delegate.float) return;
     if (this.antTimer !== 0) return;
     this.antTimer = window.setTimeout(() => {
@@ -294,8 +319,23 @@ export class Viewport {
     if (!this.fitted) {
       this.fitted = true;
       this.camera.fit(this.docW, this.docH, w, h);
+      this.bus.emit('camera:changed');
     }
     this.requestRender();
+  }
+
+  /** ResizeObserver misses dpr-only changes (same CSS box on a new monitor) —
+   *  a matchMedia(resolution) listener re-runs the resize path, re-armed per
+   *  dpr value since each query matches exactly one. */
+  private armDprWatch(): void {
+    const mq = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+    const onChange = (): void => {
+      this.dprWatch = null;
+      this.onResize();
+      this.armDprWatch();
+    };
+    mq.addEventListener('change', onChange, { once: true });
+    this.dprWatch = () => mq.removeEventListener('change', onChange);
   }
 
   /* ── pointer input ──────────────────────────────────────── */
@@ -326,7 +366,7 @@ export class Viewport {
       canvas.style.cursor = 'grabbing';
       return;
     }
-    if (e.button !== 0 && e.button !== 2) return;
+    if (e.button !== 0) return;
     const p = this.camera.pixelAt(e.offsetX, e.offsetY, this.docW, this.docH);
     if (!p) return;
     this.drawing = true;
@@ -391,16 +431,30 @@ export class Viewport {
     }
   }
 
+  /** deltaY normalized to css px (line/page modes scaled up), then either the
+   *  smooth ctrl-pinch path or accumulation toward one stop per ~100px —
+   *  trackpad scrolls no longer fire a stop per two-finger tick. */
   private onWheel(e: WheelEvent): void {
     e.preventDefault();
+    const scale = e.deltaMode === 1 ? WHEEL_LINE_PX : e.deltaMode === 2 ? this.cssH : 1;
+    const dy = e.deltaY * scale;
     if (e.ctrlKey) {
-      this.camera.setZoom(this.camera.zoom * Math.exp(-e.deltaY * 0.01), e.offsetX, e.offsetY);
-    } else if (e.deltaY !== 0) {
-      this.camera.zoomStep(e.deltaY < 0 ? 1 : -1, e.offsetX, e.offsetY);
-    } else {
+      this.wheelAcc = 0;
+      if (dy === 0) return;
+      this.camera.setZoom(this.camera.zoom * Math.exp(-dy * 0.01), e.offsetX, e.offsetY);
+      this.bus.emit('camera:changed');
       return;
     }
-    this.bus.emit('camera:changed');
+    if (dy === 0) return;
+    if (this.wheelAcc !== 0 && Math.sign(dy) !== Math.sign(this.wheelAcc)) this.wheelAcc = 0;
+    this.wheelAcc += dy;
+    let stepped = false;
+    while (Math.abs(this.wheelAcc) >= WHEEL_STEP_PX) {
+      this.camera.zoomStep(this.wheelAcc < 0 ? 1 : -1, e.offsetX, e.offsetY);
+      this.wheelAcc -= Math.sign(this.wheelAcc) * WHEEL_STEP_PX;
+      stepped = true;
+    }
+    if (stepped) this.bus.emit('camera:changed');
   }
 
   private onKey(e: KeyboardEvent, down: boolean): void {

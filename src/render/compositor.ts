@@ -1,24 +1,23 @@
 /** Per-frame composite cache with dirty-rect invalidation. Reads doc, never mutates. */
-import type { DirtyScope, FloatBuffer, Rect, StageBuffer } from '../core/contracts';
+import type { CelKey, DirtyScope, FloatBuffer, Rect, StageBuffer } from '../core/contracts';
+import { overRgba, overRgbaScaled } from '../core/pixels';
 import type { SpriteDoc } from '../core/doc';
-
-/** Straight-alpha src-over with layer opacity — duplicates doc.flattenFrame's
- *  blend so stage pixels can REPLACE the active layer without mutating the doc. */
-function over(d: number, s: number, opacity: number): number {
-  const sa = (((s >>> 24) & 0xff) / 255) * opacity;
-  if (sa <= 0) return d;
-  const da = ((d >>> 24) & 0xff) / 255;
-  const oa = sa + da * (1 - sa);
-  if (oa <= 0) return 0;
-  const k = da * (1 - sa);
-  const r = Math.round(((s & 0xff) * sa + (d & 0xff) * k) / oa);
-  const g = Math.round((((s >>> 8) & 0xff) * sa + ((d >>> 8) & 0xff) * k) / oa);
-  const b = Math.round((((s >>> 16) & 0xff) * sa + ((d >>> 16) & 0xff) * k) / oa);
-  return ((Math.round(oa * 255) << 24) | (b << 16) | (g << 8) | r) >>> 0;
-}
 
 /** Silhouette tint bases (LE ABGR, alpha 0): past #ff5555, future #2ec8c0. */
 const GHOST_TINT = { past: 0x005555ff, future: 0x00c0c82e } as const;
+
+/** Cached ghosts beyond this are evicted oldest-first (onion depth is ≤ a few). */
+const GHOST_CACHE_CAP = 8;
+
+interface GhostEntry {
+  canvas: HTMLCanvasElement;
+  ctx: CanvasRenderingContext2D;
+  buf: Uint32Array;
+  img: ImageData;
+  tint: 'past' | 'future';
+  alpha: number;
+  dirty: boolean;
+}
 
 export class Compositor {
   private doc: SpriteDoc;
@@ -30,11 +29,9 @@ export class Compositor {
   private dirtyRect: Rect | null = null;
   private lastFrame = -1;
   private stageActive = false;
+  private stageLayer = -1;
   private floatActive = false;
-  private ghostCnv: HTMLCanvasElement | null = null;
-  private ghostCtx: CanvasRenderingContext2D | null = null;
-  private ghostBuf: Uint32Array | null = null;
-  private ghostImg: ImageData | null = null;
+  private readonly ghosts = new Map<number, GhostEntry>();
 
   constructor(doc: SpriteDoc) {
     this.doc = doc;
@@ -51,24 +48,34 @@ export class Compositor {
     this.lastFrame = -1;
     this.stageActive = false;
     this.floatActive = false;
+    this.ghosts.clear();
   }
 
   invalidate(scope: DirtyScope): void {
     if (scope.kind === 'cels') {
       // Wave 1: rects dirty the cache regardless of which frame owns the cel.
-      for (const c of scope.cels) this.union(c.rect);
+      for (const c of scope.cels) {
+        this.union(c.rect);
+        this.dirtyGhostForCel(c.key);
+      }
+    } else if (scope.kind === 'selection') {
+      // overlays only — no pixels changed, composite and ghosts stay valid
     } else {
       this.allDirty = true;
+      for (const entry of this.ghosts.values()) entry.dirty = true;
     }
   }
 
   /**
    * Canvas holding the flattened frame (doc.flattenFrame under the hood,
-   * recomposited only in dirty rects). When stage is given, mask=1 pixels
-   * REPLACE the active layer's cel in the composite (live tool preview).
-   * When float is given, its pixels composite src-over ON TOP of the whole
-   * stack (hovers above the active layer — Wave 2 simplification).
-   * Returned canvas is owned by the compositor — draw from it, don't keep it.
+   * recomposited only in dirty rects — including while a stage is active, so
+   * a stroke costs the dirty union, not w×h×layers per rAF). When stage is
+   * given, mask=1 pixels REPLACE the active layer's cel in the composite
+   * (live tool preview). When float is given, its pixels composite src-over
+   * ON TOP of the whole stack (hovers above the active layer — Wave 2
+   * simplification; the float path stays a full recomposite because float
+   * drags emit no dirty rects). Returned canvas is owned by the compositor —
+   * draw from it, don't keep it.
    */
   frameCanvas(
     frameIndex: number, stage: StageBuffer | null, activeLayer: number,
@@ -79,20 +86,45 @@ export class Compositor {
       this.lastFrame = frameIndex;
       this.allDirty = true;
     }
-    if (stage || f) {
-      if (stage) this.compositeWithStage(frameIndex, stage, activeLayer);
+    if (stage && this.stageActive && activeLayer !== this.stageLayer) {
+      this.allDirty = true;
+    }
+    if (f) {
+      if (stage) this.compositeWithStage(frameIndex, stage, activeLayer, null);
       else this.doc.flattenFrame(frameIndex, this.buf);
-      if (f) this.compositeFloat(f);
+      this.compositeFloat(f);
       this.stageActive = stage !== null;
-      this.floatActive = f !== null;
+      this.stageLayer = activeLayer;
+      this.floatActive = true;
       this.allDirty = false;
       this.dirtyRect = null;
       this.upload(null);
       return this.canvas;
     }
-    if (this.stageActive || this.floatActive) {
-      this.stageActive = false;
+    if (this.floatActive) {
+      // float just vanished — its pixels are baked into the buffer
       this.floatActive = false;
+      this.allDirty = true;
+    }
+    if (stage) {
+      if (this.allDirty) {
+        this.compositeWithStage(frameIndex, stage, activeLayer, null);
+        this.allDirty = false;
+        this.dirtyRect = null;
+        this.upload(null);
+      } else if (this.dirtyRect) {
+        const r = this.dirtyRect;
+        this.dirtyRect = null;
+        this.compositeWithStage(frameIndex, stage, activeLayer, r);
+        this.upload(r);
+      }
+      this.stageActive = true;
+      this.stageLayer = activeLayer;
+      return this.canvas;
+    }
+    if (this.stageActive) {
+      // stage just ended — preview pixels are baked in, rebuild clean
+      this.stageActive = false;
       this.allDirty = true;
     }
     if (this.allDirty) {
@@ -112,42 +144,55 @@ export class Compositor {
   /**
    * docW×docH silhouette-tinted flat composite of a frame, for onion skin.
    * Per pixel: out = tint color with alpha = srcAlpha * alpha (classic onion
-   * silhouette). All ghosts share ONE scratch canvas — the returned canvas is
-   * reused, draw it before requesting another ghost. Null when frameIndex is
-   * out of bounds. Never touches the main composite cache.
+   * silhouette). Ghost canvases are CACHED per frame, keyed on (tint, alpha)
+   * and invalidated with that frame's cels — repeat requests while idle or
+   * mid-stroke cost nothing. Returned canvas is owned by the compositor
+   * (reuse contract unchanged: draw it before requesting another ghost).
+   * Null when frameIndex is out of bounds. Never touches the main cache.
    */
   ghostCanvas(frameIndex: number, tint: 'past' | 'future', alpha: number): HTMLCanvasElement | null {
     if (frameIndex < 0 || frameIndex >= this.doc.frames.length) return null;
     const w = this.doc.width;
     const h = this.doc.height;
-    let cnv = this.ghostCnv;
-    let ctx = this.ghostCtx;
-    let buf = this.ghostBuf;
-    let img = this.ghostImg;
-    if (!cnv || !ctx || !buf || !img || cnv.width !== w || cnv.height !== h) {
-      cnv = cnv ?? document.createElement('canvas');
-      cnv.width = w;
-      cnv.height = h;
-      const c = cnv.getContext('2d', { willReadFrequently: false });
-      if (!c) throw new Error('compositor: 2d context unavailable');
-      ctx = c;
-      const bytes = new Uint8ClampedArray(w * h * 4);
-      buf = new Uint32Array(bytes.buffer);
-      img = new ImageData(bytes, w, h);
-      this.ghostCnv = cnv;
-      this.ghostCtx = ctx;
-      this.ghostBuf = buf;
-      this.ghostImg = img;
+    let entry = this.ghosts.get(frameIndex);
+    if (entry && !entry.dirty && entry.tint === tint && entry.alpha === alpha) {
+      return entry.canvas;
     }
-    this.doc.flattenFrame(frameIndex, buf);
+    if (!entry) {
+      if (this.ghosts.size >= GHOST_CACHE_CAP) {
+        const oldest = this.ghosts.keys().next();
+        if (!oldest.done) this.ghosts.delete(oldest.value);
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d', { willReadFrequently: false });
+      if (!ctx) throw new Error('compositor: 2d context unavailable');
+      const bytes = new Uint8ClampedArray(w * h * 4);
+      entry = {
+        canvas,
+        ctx,
+        buf: new Uint32Array(bytes.buffer),
+        img: new ImageData(bytes, w, h),
+        tint,
+        alpha,
+        dirty: true,
+      };
+      this.ghosts.set(frameIndex, entry);
+    }
+    this.doc.flattenFrame(frameIndex, entry.buf);
     const base = GHOST_TINT[tint];
     const a = Math.min(1, Math.max(0, alpha));
+    const buf = entry.buf;
     for (let i = 0; i < buf.length; i++) {
       const sa = (buf[i] ?? 0) >>> 24;
       buf[i] = sa === 0 ? 0 : ((Math.round(sa * a) << 24) | base) >>> 0;
     }
-    ctx.putImageData(img, 0, 0);
-    return cnv;
+    entry.ctx.putImageData(entry.img, 0, 0);
+    entry.tint = tint;
+    entry.alpha = alpha;
+    entry.dirty = false;
+    return entry.canvas;
   }
 
   private alloc(): void {
@@ -180,21 +225,44 @@ export class Compositor {
     this.dirtyRect = { x: nx0, y: ny0, w: nx1 - nx0, h: ny1 - ny0 };
   }
 
-  private compositeWithStage(frameIndex: number, stage: StageBuffer, activeLayer: number): void {
+  /** Ghosts are keyed by frame index — map the cel's frame id to mark just
+   *  that frame stale (a stroke's own frame is never drawn as a ghost). */
+  private dirtyGhostForCel(key: CelKey): void {
+    const fid = key.slice(key.indexOf(':') + 1);
+    const frames = this.doc.frames;
+    for (let i = 0; i < frames.length; i++) {
+      if (frames[i]?.id !== fid) continue;
+      const entry = this.ghosts.get(i);
+      if (entry) entry.dirty = true;
+      return;
+    }
+  }
+
+  private compositeWithStage(
+    frameIndex: number, stage: StageBuffer, activeLayer: number, rect: Rect | null,
+  ): void {
     const doc = this.doc;
-    const n = doc.width * doc.height;
-    this.buf.fill(0);
+    const w = doc.width;
+    const r = rect ?? { x: 0, y: 0, w, h: doc.height };
+    for (let y = r.y; y < r.y + r.h; y++) {
+      const row = y * w;
+      for (let x = r.x; x < r.x + r.w; x++) this.buf[row + x] = 0;
+    }
     for (let li = 0; li < doc.layers.length; li++) {
       const layer = doc.layers[li];
       if (!layer || !layer.visible || layer.opacity <= 0) continue;
       const cel = doc.getCel(doc.celKeyAt(li, frameIndex));
       const staged = li === activeLayer;
       if (!cel && !staged) continue;
-      for (let i = 0; i < n; i++) {
-        let s = cel ? (cel[i] ?? 0) : 0;
-        if (staged && stage.mask[i]) s = stage.color[i] ?? 0;
-        if (s === 0) continue;
-        this.buf[i] = over(this.buf[i] ?? 0, s, layer.opacity);
+      for (let y = r.y; y < r.y + r.h; y++) {
+        const row = y * w;
+        for (let x = r.x; x < r.x + r.w; x++) {
+          const i = row + x;
+          let s = cel ? (cel[i] ?? 0) : 0;
+          if (staged && stage.mask[i]) s = stage.color[i] ?? 0;
+          if (s === 0) continue;
+          this.buf[i] = overRgbaScaled(this.buf[i] ?? 0, s, layer.opacity);
+        }
       }
     }
   }
@@ -213,7 +281,7 @@ export class Compositor {
         const s = f.pixels[srcRow + x] ?? 0;
         if (s === 0) continue;
         const i = dstRow + x;
-        this.buf[i] = over(this.buf[i] ?? 0, s, 1);
+        this.buf[i] = overRgba(this.buf[i] ?? 0, s);
       }
     }
   }

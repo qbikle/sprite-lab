@@ -1,6 +1,6 @@
 /** io/exporters/sheet — pure layout packing, fps median math, v1 JSON parity. */
 import { describe, expect, it } from 'vitest';
-import { buildSheetJson, packSheetLayout, renderSheetPixels } from '../../src/io/exporters/sheet';
+import { buildSheetJson, packSheetLayout, renderSheetPixels, sheetFileName } from '../../src/io/exporters/sheet';
 import { SpriteDoc } from '../../src/core/doc';
 import { packRgba } from '../../src/core/pixels';
 
@@ -101,6 +101,14 @@ describe('buildSheetJson', () => {
   it('rounds 1000/median to the nearest fps', () => {
     expect(must(jsonFor(docWithFrames([333])).rows[0]).fps).toBe(3);
     expect(must(jsonFor(docWithFrames([125, 125])).rows[0]).fps).toBe(8);
+  });
+
+  it('names the sheet exactly what sheetFileName() names the download', () => {
+    expect(sheetFileName('cat')).toBe('cat-sheet.png');
+    for (const name of ['cat', 'hero run', 'x.y']) {
+      const doc = docWithFrames([100], name);
+      expect(jsonFor(doc).sheet).toBe(sheetFileName(name));
+    }
   });
 
   it('frames are column indices within the packed row', () => {

@@ -79,7 +79,7 @@ test('sheet+json export matches the v1 shape', async ({ page }) => {
   await expect.poll(() => downloads.length, { timeout: 10_000 }).toBe(2);
   const [a, b] = downloads;
   const files = [a!, b!].map((d) => d.suggestedFilename()).sort();
-  expect(files.some((f) => f.endsWith('.sheet.png'))).toBe(true);
+  expect(files.some((f) => f.endsWith('-sheet.png'))).toBe(true);
   expect(files.some((f) => f.endsWith('.sheet.json'))).toBe(true);
   const jsonDl = [a!, b!].find((d) => d.suggestedFilename().endsWith('.json'));
   const data = JSON.parse(readFileSync(await jsonDl!.path(), 'utf8'));

@@ -1,6 +1,6 @@
 /** Ellipse — midpoint ellipse in the drag box, ⌥ filled, ⇧ circle. */
-import type { PixelPt, Rgba, ToolCtx, ToolId } from '../core/contracts';
-import { stampLine, stampRect } from './brush';
+import type { PixelPt, ToolCtx, ToolId } from '../core/contracts';
+import { stampAt, stampLine } from './brush';
 import { ShapeTool } from './shape';
 
 export class EllipseTool extends ShapeTool {
@@ -35,21 +35,16 @@ export class EllipseTool extends ShapeTool {
       return;
     }
     const size = ctx.brushSize;
-    plotEllipseRect(x0, y0, x1, y1, (x, y) => stampFootprint(ctx, { x, y }, size, color));
-  }
-}
-
-/** Brush footprint at p, mirroring brush.ts stampAt. */
-function stampFootprint(ctx: ToolCtx, p: PixelPt, size: number, color: Rgba): void {
-  const r = stampRect(p, size);
-  for (let y = r.y; y < r.y + r.h; y++) {
-    for (let x = r.x; x < r.x + r.w; x++) ctx.stage({ x, y }, color);
+    const put = (q: PixelPt): void => ctx.stage(q, color);
+    plotEllipseRect(x0, y0, x1, y1, (x, y) => stampAt(x, y, size, put));
   }
 }
 
 /** Midpoint ellipse fitted to an inclusive box (rect variant, after Zingl) —
- *  exact for even and odd spans, emits 4-way symmetric outline points. */
-function plotEllipseRect(
+ *  exact for even and odd spans, emits 4-way symmetric outline points.
+ *  The finishing loop's `<=` (where Zingl has `<`) is DELIBERATE: it completes
+ *  the tips of 2-wide boxes — pinned by the golden test, do not "fix" back. */
+export function plotEllipseRect(
   x0: number, y0: number, x1: number, y1: number,
   plot: (x: number, y: number) => void,
 ): void {

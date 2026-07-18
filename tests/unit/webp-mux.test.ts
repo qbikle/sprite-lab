@@ -141,11 +141,26 @@ describe('muxAnimatedWebp — source hygiene', () => {
       .toThrow(/not a webp/);
     expect(() => muxAnimatedWebp([], 4, 4)).toThrow(/no frames/);
   });
+
+  it('clamps frame durations into 0..0xffffff (24-bit ANMF field)', () => {
+    const payload = fakeWebp([['VP8 ', VP8_BODY]]);
+    const out = muxAnimatedWebp([
+      { payload, durationMs: 0x2000000 },
+      { payload, durationMs: -50 },
+    ], 4, 4);
+    const anmfs = walkChunks(out, 12, out.length).filter((c) => c.fourcc === 'ANMF');
+    expect(anmfs).toHaveLength(2);
+    expect(u24(anmfs[0]?.data ?? new Uint8Array(), 12)).toBe(0xffffff);
+    expect(u24(anmfs[1]?.data ?? new Uint8Array(), 12)).toBe(0);
+  });
 });
 
 describe('canEncodeWebp', () => {
-  it('is false without OffscreenCanvas (node)', () => {
+  it('resolves false without OffscreenCanvas (node), memoized', async () => {
     expect(typeof OffscreenCanvas).toBe('undefined');
-    expect(canEncodeWebp()).toBe(false);
+    const probe = canEncodeWebp();
+    expect(probe).toBeInstanceOf(Promise);
+    await expect(probe).resolves.toBe(false);
+    expect(canEncodeWebp()).toBe(probe); // same memoized promise
   });
 });

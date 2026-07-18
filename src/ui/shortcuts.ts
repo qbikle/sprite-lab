@@ -8,6 +8,8 @@ export interface ShortcutDef {
   keys: string;
   desc: string;
   group: string; // cheat-sheet section: 'tools' | 'canvas' | 'edit' | 'app'
+  /** Alias bindings: active, but omitted from the cheat sheet. */
+  hidden?: boolean;
   run: () => void;
 }
 
@@ -76,7 +78,7 @@ export class Shortcuts {
     const list = this.bySig.get(sig);
     if (list) list.push(def);
     else this.bySig.set(sig, [def]);
-    this.ordered.push(def);
+    if (!def.hidden) this.ordered.push(def);
   }
 
   /** Attach the document keydown listener. Returns detach. */

@@ -2,7 +2,7 @@
  *  + restamp on every move, one committed command on up.
  *  ⇧ constrains to square/circle · ⌥ fills. */
 import type { PixelPt, PointerInfo, ToolCtx } from '../core/contracts';
-import { Tool } from './tool';
+import { Tool, constrainSquare } from './tool';
 
 export abstract class ShapeTool extends Tool {
   private down = false;
@@ -15,10 +15,7 @@ export abstract class ShapeTool extends Tool {
 
   /** ⇧ constraint: snap b so |dx| == |dy| (square/circle). LineTool overrides. */
   protected constrain(a: PixelPt, b: PixelPt): PixelPt {
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const d = Math.max(Math.abs(dx), Math.abs(dy));
-    return { x: a.x + Math.sign(dx) * d, y: a.y + Math.sign(dy) * d };
+    return constrainSquare(a, b);
   }
 
   override onDown(ctx: ToolCtx, p: PixelPt, e: PointerInfo): void {

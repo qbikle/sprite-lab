@@ -23,10 +23,21 @@ export function stampRect(p: PixelPt, size: number): Rect {
   return { x: p.x - off, y: p.y - off, w: size, h: size };
 }
 
-function stampAt(p: PixelPt, size: number, fn: (p: PixelPt) => void): void {
-  const r = stampRect(p, size);
-  for (let y = r.y; y < r.y + r.h; y++) {
-    for (let x = r.x; x < r.x + r.w; x++) fn({ x, y });
+/** Scratch point handed to stamp callbacks — mutated in place per pixel so the
+ *  stroke hot path allocates nothing. Callbacks must not retain it. */
+const SCRATCH: PixelPt = { x: 0, y: 0 };
+
+/** Stamp the brush footprint centered on (px, py); fn sees each covered pixel. */
+export function stampAt(px: number, py: number, size: number, fn: (p: PixelPt) => void): void {
+  const off = (size - 1) >> 1;
+  const x0 = px - off;
+  const y0 = py - off;
+  for (let y = y0; y < y0 + size; y++) {
+    for (let x = x0; x < x0 + size; x++) {
+      SCRATCH.x = x;
+      SCRATCH.y = y;
+      fn(SCRATCH);
+    }
   }
 }
 
@@ -37,7 +48,7 @@ export function stampLine(
   fn: (p: PixelPt) => void,
 ): void {
   if (from === null) {
-    stampAt(to, size, fn);
+    stampAt(to.x, to.y, size, fn);
     return;
   }
   let x = from.x;
@@ -48,7 +59,7 @@ export function stampLine(
   const sy = y < to.y ? 1 : -1;
   let err = dx + dy;
   for (;;) {
-    stampAt({ x, y }, size, fn);
+    stampAt(x, y, size, fn);
     if (x === to.x && y === to.y) return;
     const e2 = 2 * err;
     if (e2 >= dy) { err += dy; x += sx; }

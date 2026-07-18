@@ -69,23 +69,39 @@ describe('SwapColors', () => {
     expect(must(doc.getCel(doc.celKeyAt(0, 0)))[0]).toBe(BLUE);
   });
 
-  it('apply→revert→apply is byte-stable including palette colors and recent', () => {
+  it('apply→revert→apply is byte-stable for palette colors; recent is never touched', () => {
     const doc = gridDoc();
     doc.palette.colors = [RED, GREEN, WHITE];
     doc.palette.recent = [GREEN, RED];
+    const recentRef = doc.palette.recent;
     const before = snap(doc);
     const cmd = new SwapColors([{ from: RED, to: BLUE }, { from: GREEN, to: MAGENTA }]);
     cmd.apply(doc);
     expect(doc.palette.colors).toEqual([BLUE, MAGENTA, WHITE]);
-    expect(doc.palette.recent).toEqual([MAGENTA, BLUE]);
+    // recent is ephemeral UX state — excluded from the swap and its undo capture
+    expect(doc.palette.recent).toBe(recentRef);
+    expect(doc.palette.recent).toEqual([GREEN, RED]);
     const after = snap(doc);
     expect(after).not.toBe(before);
     cmd.revert(doc);
     expect(snap(doc)).toBe(before);
+    expect(doc.palette.recent).toBe(recentRef);
     cmd.apply(doc);
     expect(snap(doc)).toBe(after);
     cmd.revert(doc);
     expect(snap(doc)).toBe(before);
+  });
+
+  it('an in-place recent mutation between apply and revert survives undo', () => {
+    const doc = gridDoc();
+    doc.palette.colors = [RED];
+    doc.palette.recent = [RED];
+    const cmd = new SwapColors([{ from: RED, to: BLUE }]);
+    cmd.apply(doc);
+    doc.palette.recent.unshift(YELLOW); // editor.setColor mutates recent live
+    cmd.revert(doc);
+    expect(doc.palette.recent).toEqual([YELLOW, RED]);
+    expect(doc.palette.colors).toEqual([RED]);
   });
 
   it('alsoPalette=false remaps pixels but leaves the palette untouched', () => {

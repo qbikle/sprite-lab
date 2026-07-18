@@ -3,27 +3,15 @@
  * These close over a SelectionHost (the editor's session state) — the one
  * sanctioned impurity in the command layer, documented in ARCHITECTURE.
  */
-import type { CelKey, Command, DirtyScope, FloatBuffer, Rect, Rgba, SelectionState } from '../contracts';
+import type { CelKey, Command, DirtyScope, FloatBuffer, Rect, SelectionState } from '../contracts';
 import type { SpriteDoc } from '../doc';
-import { clampRect, copyRect, packRgba, pasteRect } from '../pixels';
+import { clampRect, copyRect, overRgba, pasteRect } from '../pixels';
 import { tightBounds } from '../selection';
 
 /** The slice of editor session state these commands mutate. */
 export interface SelectionHost {
   selection: SelectionState | null;
   float: FloatBuffer | null;
-}
-
-/** Straight-alpha src-over (same math as SpriteDoc.flattenFrame). */
-function over(s: Rgba, d: Rgba): Rgba {
-  const sa = ((s >>> 24) & 0xff) / 255;
-  const da = ((d >>> 24) & 0xff) / 255;
-  const oa = sa + da * (1 - sa);
-  const dw = da * (1 - sa);
-  const r = Math.round(((s & 0xff) * sa + (d & 0xff) * dw) / oa);
-  const g = Math.round((((s >>> 8) & 0xff) * sa + ((d >>> 8) & 0xff) * dw) / oa);
-  const b = Math.round((((s >>> 16) & 0xff) * sa + ((d >>> 16) & 0xff) * dw) / oa);
-  return packRgba(r, g, b, Math.round(oa * 255));
 }
 
 /** Selection covering the float's nonzero pixels, clamped to the doc. */
@@ -59,7 +47,8 @@ export class SetSelection implements Command {
     this.prev = host.selection;
     this.next = next;
     this.label = label;
-    this.sizeBytes = (next ? next.mask.byteLength : 0) + 64;
+    this.sizeBytes =
+      (this.prev ? this.prev.mask.byteLength : 0) + (next ? next.mask.byteLength : 0) + 64;
   }
 
   apply(doc: SpriteDoc): void {
@@ -96,7 +85,7 @@ export class LiftFloat implements Command {
     this.selection = host.selection;
     const b = this.selection.bounds;
     this.dirty = { kind: 'cels', cels: [{ key, rect: { ...b } }] };
-    this.sizeBytes = 3 * b.w * b.h * 4 + 128;
+    this.sizeBytes = 3 * b.w * b.h * 4 + this.selection.mask.byteLength + 128;
   }
 
   apply(doc: SpriteDoc): void {
@@ -181,7 +170,7 @@ export class AnchorFloat implements Command {
             const s = this.pixels[y * this.rect.w + x] ?? 0;
             if (((s >>> 24) & 0xff) === 0) continue;
             const i = dy * this.docW + dx;
-            cel[i] = over(s, cel[i] ?? 0);
+            cel[i] = overRgba(cel[i] ?? 0, s);
           }
         }
         this.after = copyRect(cel, this.docW, c);
@@ -200,7 +189,7 @@ export class AnchorFloat implements Command {
   }
 }
 
-/** Clipboard paste → new float (+ selection = float footprint). */
+/** Clipboard paste → new float; the selection is left untouched. */
 export class PasteFloat implements Command {
   readonly label = 'paste';
   readonly sizeBytes: number;
@@ -229,5 +218,41 @@ export class PasteFloat implements Command {
   revert(doc: SpriteDoc): void {
     void doc; // unused
     this.host.float = this.prevFloat;
+  }
+}
+
+/** Discard the float without anchoring (cut). */
+export class DropFloat implements Command {
+  readonly label = 'cut float';
+  readonly dirty: DirtyScope = { kind: 'selection' };
+
+  private readonly host: SelectionHost;
+  private captured = false;
+  private float: FloatBuffer | null = null;
+
+  constructor(host: SelectionHost) {
+    this.host = host;
+  }
+
+  get sizeBytes(): number {
+    return (this.float ? this.float.pixels.byteLength : 0) + 64;
+  }
+
+  apply(doc: SpriteDoc): void {
+    void doc; // unused
+    if (!this.captured) {
+      this.captured = true;
+      this.float = this.host.float
+        ? { pixels: new Uint32Array(this.host.float.pixels), rect: { ...this.host.float.rect } }
+        : null;
+    }
+    this.host.float = null;
+  }
+
+  revert(doc: SpriteDoc): void {
+    void doc; // unused
+    this.host.float = this.float
+      ? { pixels: new Uint32Array(this.float.pixels), rect: { ...this.float.rect } }
+      : null;
   }
 }

@@ -251,6 +251,8 @@ export function encodeGif(
   out.u8(0);
 
   const indices = new Uint8Array(w * h);
+  let elapsedTarget = 0; // accumulated timeline: per-frame rounding never drifts
+  let emittedCs = 0;
   for (let f = 0; f < frames.length; f++) {
     onFrame?.(f, frames.length);
     const frame = frames[f];
@@ -260,11 +262,14 @@ export function encodeGif(
       const c = px[i] ?? 0;
       indices[i] = c >>> 24 < 128 ? 0 : slotFor(c & 0xffffff);
     }
+    elapsedTarget += frame.durationMs;
+    const cs = Math.min(0xffff, Math.max(2, Math.round(elapsedTarget / 10) - emittedCs));
+    emittedCs += cs;
     out.u8(0x21); // graphic control: dispose-to-bg, transparent index 0
     out.u8(0xf9);
     out.u8(4);
     out.u8(0x09);
-    out.u16(Math.max(2, Math.round(frame.durationMs / 10)));
+    out.u16(cs);
     out.u8(0);
     out.u8(0);
     out.u8(0x2c); // image descriptor: full frame, no local table

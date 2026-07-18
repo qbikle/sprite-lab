@@ -74,13 +74,33 @@ describe('guessFrameSize', () => {
     expect(guessFrameSize(40, 20)).toBe(20);
   });
 
-  it('clamps the gcd into 8..128', () => {
-    expect(guessFrameSize(143, 286)).toBe(128); // gcd 143
-    expect(guessFrameSize(6, 10)).toBe(8);      // gcd 2
+  it('falls back to 32 when the clamped gcd no longer divides both dims', () => {
+    expect(guessFrameSize(143, 286)).toBe(32); // gcd 143 → clamp 128, 128 ∤ 143
+    expect(guessFrameSize(6, 10)).toBe(32);    // gcd 2 → clamp 8, 8 ∤ 6
+    expect(guessFrameSize(34, 22)).toBe(32);   // gcd 2 → clamp 8 would crop the sheet
+  });
+
+  it('keeps a clamped gcd that still divides both dims', () => {
+    expect(guessFrameSize(20, 100)).toBe(20);  // gcd 20, in range, divides
   });
 
   it('returns 32 when the dims are coprime', () => {
     expect(guessFrameSize(35, 64)).toBe(32);
     expect(guessFrameSize(7, 13)).toBe(32);
+  });
+
+  it('always returns a divisor of both dims, or the 32 fallback', () => {
+    let seed = 0x9e3779b9;
+    const rand = (max: number): number => {
+      seed = (seed * 1664525 + 1013904223) >>> 0;
+      return (seed % max) + 1;
+    };
+    for (let i = 0; i < 500; i++) {
+      const w = rand(512);
+      const h = rand(512);
+      const s = guessFrameSize(w, h);
+      const divides = w % s === 0 && h % s === 0;
+      expect(divides || s === 32, `guessFrameSize(${w}, ${h}) → ${s}`).toBe(true);
+    }
   });
 });

@@ -12,7 +12,9 @@ import type { History } from '../core/history';
 import type { SpriteDoc } from '../core/doc';
 import { PixelPatch } from '../core/commands/pixel-patch';
 import type { SelectionHost } from '../core/commands/selection-ops';
-import { AnchorFloat, LiftFloat, PasteFloat, SetSelection } from '../core/commands/selection-ops';
+import {
+  AnchorFloat, DropFloat, LiftFloat, PasteFloat, SetSelection,
+} from '../core/commands/selection-ops';
 import { maskAll, tightBounds } from '../core/selection';
 import { makeBuffer, packRgba, unpackRgba } from '../core/pixels';
 import { BRUSH_MAX, BRUSH_MIN, bayerPass } from '../tools/brush';
@@ -112,6 +114,7 @@ export class EditorState implements ViewportDelegate {
       get color() { return self.currentColor; },
       get brushSize() { return self.currentBrush; },
       inBounds: (p: PixelPt) => self.inBounds(p),
+      symmetrySeeds: (p: PixelPt) => self.expandSymmetry(p),
       getCelPixel: (p: PixelPt) => self.getCelPixel(p),
       pickColor: (p: PixelPt) => self.pickColor(p),
       setColor: (c: Rgba) => self.setColor(c),
@@ -326,8 +329,7 @@ export class EditorState implements ViewportDelegate {
     this.clipboard = data;
     this.writeClipboardPng(data);
     if (this.floatState) {
-      this.floatState = null;
-      this.busRef.emit('float:changed');
+      this.historyRef.commit(new DropFloat(this.host));
       return;
     }
     const sel = this.selectionState;

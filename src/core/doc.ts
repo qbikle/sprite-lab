@@ -2,7 +2,7 @@
 import type {
   CelKey, DocMeta, Frame, FrameId, Layer, LayerId, Palette, Rect, Rgba, Tag,
 } from './contracts';
-import { makeBuffer, packRgba } from './pixels';
+import { makeBuffer, overRgbaScaled, packRgba } from './pixels';
 
 /** Serialized form (.sprite envelope + autosave). Cel buffers are base64. */
 export interface DocJson {
@@ -165,17 +165,7 @@ export class SpriteDoc {
         const row = y * w;
         for (let x = r.x; x < r.x + r.w; x++) {
           const i = row + x;
-          const s = cel[i] ?? 0;
-          const sa = (((s >>> 24) & 0xff) / 255) * layer.opacity;
-          if (sa <= 0) continue;
-          const d = out[i] ?? 0;
-          const da = ((d >>> 24) & 0xff) / 255;
-          const oa = sa + da * (1 - sa);
-          const dw = da * (1 - sa);
-          const rr = Math.round(((s & 0xff) * sa + (d & 0xff) * dw) / oa);
-          const gg = Math.round((((s >>> 8) & 0xff) * sa + ((d >>> 8) & 0xff) * dw) / oa);
-          const bb = Math.round((((s >>> 16) & 0xff) * sa + ((d >>> 16) & 0xff) * dw) / oa);
-          out[i] = packRgba(rr, gg, bb, Math.round(oa * 255));
+          out[i] = overRgbaScaled(out[i] ?? 0, cel[i] ?? 0, layer.opacity);
         }
       }
     }
@@ -217,8 +207,16 @@ export class SpriteDoc {
       recent: [...json.palette.recent],
     };
     doc.meta = { ...json.meta };
+    const layerIds = new Set<string>(doc.layers.map((l) => l.id));
+    const frameIds = new Set<string>(doc.frames.map((f) => f.id));
+    const celBytes = json.width * json.height * 4;
     for (const [key, b64] of Object.entries(json.cels)) {
+      // Drop orphans (ids not in layers/frames — they could collide with a
+      // future allocLayerId) and cels whose buffer isn't exactly w×h×4.
+      const parts = key.split(':');
+      if (parts.length !== 2 || !layerIds.has(parts[0] ?? '') || !frameIds.has(parts[1] ?? '')) continue;
       const bytes = base64ToBytes(b64);
+      if (bytes.byteLength !== celBytes) continue;
       doc.cels.set(key as CelKey, new Uint32Array(bytes.buffer, 0, bytes.byteLength >>> 2));
     }
     doc.layerSeq = maxIdSeq(doc.layers.map((l) => l.id), 'l');
@@ -235,6 +233,14 @@ export class SpriteDoc {
     this.frameSeq += 1;
     return `f${this.frameSeq}`;
   }
+}
+
+/** Splice arr[from] out and back in at `to` (RangeError on a bad `from`).
+ *  Shared by the reorder commands in frames-ops/layers-ops. */
+export function moveItem<T>(arr: T[], from: number, to: number, ctx: string): void {
+  const [item] = arr.splice(from, 1);
+  if (item === undefined) throw new RangeError(`${ctx}: bad index ${from}`);
+  arr.splice(to, 0, item);
 }
 
 /** Highest '<prefix><n>' among ids — keeps generated ids collision-free after load. */

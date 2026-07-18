@@ -166,4 +166,39 @@ describe('SpriteDoc toJSON / fromJSON', () => {
     const bad = { ...json, version: 2 } as unknown as DocJson;
     expect(() => SpriteDoc.fromJSON(bad)).toThrow(/version/);
   });
+
+  it('drops cels whose buffer is not exactly w*h*4 bytes', () => {
+    const doc = buildDoc();
+    const json = doc.toJSON();
+    const truncated = json.cels['l7:f1'];
+    if (truncated === undefined) throw new Error('missing cel');
+    json.cels['l7:f1'] = truncated.slice(0, 8);
+    const doc2 = SpriteDoc.fromJSON(json);
+    expect(doc2.getCel(doc2.celKey('l7', 'f1'))).toBeUndefined();
+    expect(Array.from(doc2.getCel(doc2.celKey('l1', 'f1')) ?? []))
+      .toEqual(Array.from(doc.getCel(doc.celKey('l1', 'f1')) ?? []));
+  });
+
+  it('drops orphan cel keys whose layer or frame id does not exist', () => {
+    const doc = buildDoc();
+    const json = doc.toJSON();
+    const valid = json.cels['l1:f1'];
+    if (valid === undefined) throw new Error('missing cel');
+    json.cels['l99:f1'] = valid; // orphan layer — would collide with allocLayerId
+    json.cels['l1:f9'] = valid;  // orphan frame
+    json.cels['garbage'] = valid; // not even a key
+    const doc2 = SpriteDoc.fromJSON(json);
+    expect(doc2.getCel(doc2.celKey('l99', 'f1'))).toBeUndefined();
+    expect(doc2.getCel(doc2.celKey('l1', 'f9'))).toBeUndefined();
+    expect(doc2.celEntriesForLayer('l1')).toHaveLength(1);
+    expect(doc2.celEntriesForLayer('l7')).toHaveLength(1);
+  });
+
+  it('a fully valid doc loads every cel untouched', () => {
+    const doc = buildDoc();
+    const doc2 = SpriteDoc.fromJSON(doc.toJSON());
+    for (const key of [doc.celKey('l1', 'f1'), doc.celKey('l7', 'f1')]) {
+      expect(Array.from(doc2.getCel(key) ?? [])).toEqual(Array.from(doc.getCel(key) ?? []));
+    }
+  });
 });

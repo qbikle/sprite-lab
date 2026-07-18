@@ -8,9 +8,7 @@ interface CelCapture { key: CelKey; before: Uint32Array; after: Uint32Array }
 
 interface PaletteCapture {
   prevColors: Rgba[];
-  prevRecent: Rgba[];
   nextColors: Rgba[];
-  nextRecent: Rgba[];
 }
 
 /** Swap can touch every frame — dirty 'all' is both cheap and correct.
@@ -44,18 +42,12 @@ export class SwapColors implements Command {
       return;
     }
     for (const { key, after } of this.cels) doc.ensureCel(key).set(after);
-    if (this.pal) {
-      doc.palette.colors = this.pal.nextColors;
-      doc.palette.recent = this.pal.nextRecent;
-    }
+    if (this.pal) doc.palette.colors = this.pal.nextColors;
   }
 
   revert(doc: SpriteDoc): void {
     for (const { key, before } of this.cels) doc.ensureCel(key).set(before);
-    if (this.pal) {
-      doc.palette.colors = this.pal.prevColors;
-      doc.palette.recent = this.pal.prevRecent;
-    }
+    if (this.pal) doc.palette.colors = this.pal.prevColors;
   }
 
   private firstApply(doc: SpriteDoc): void {
@@ -75,15 +67,14 @@ export class SwapColors implements Command {
       }
     }
     if (!this.alsoPalette) return;
+    // recent is ephemeral UX state (see EditorState.setColor) — never captured
+    // or restored here: the live array aliases would corrupt the undo capture.
     const remap = (c: Rgba): Rgba => this.map.get(c) ?? c;
     this.pal = {
       prevColors: doc.palette.colors,
-      prevRecent: doc.palette.recent,
       nextColors: doc.palette.colors.map(remap),
-      nextRecent: doc.palette.recent.map(remap),
     };
     doc.palette.colors = this.pal.nextColors;
-    doc.palette.recent = this.pal.nextRecent;
   }
 }
 

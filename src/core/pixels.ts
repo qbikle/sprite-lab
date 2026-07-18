@@ -1,7 +1,9 @@
 /** Uint32Array pixel-buffer ops. The ONLY place that packs/unpacks colors. */
-import type { PixelPt, Rect, Rgba } from './contracts';
+import type { Rect, Rgba } from './contracts';
 
+/** a=0 normalizes to 0 — one canonical transparent, no phantom rgb ghosts. */
 export function packRgba(r: number, g: number, b: number, a: number): Rgba {
+  if (a === 0) return 0;
   return ((a << 24) | (b << 16) | (g << 8) | r) >>> 0;
 }
 
@@ -38,8 +40,22 @@ export function makeBuffer(w: number, h: number): Uint32Array {
   return new Uint32Array(w * h);
 }
 
-export function inRect(p: PixelPt, r: Rect): boolean {
-  return p.x >= r.x && p.y >= r.y && p.x < r.x + r.w && p.y < r.y + r.h;
+/** Straight-alpha src-over with the src alpha pre-scaled by `opacity` (0..1). */
+export function overRgbaScaled(dst: Rgba, src: Rgba, opacity: number): Rgba {
+  const sa = (((src >>> 24) & 0xff) / 255) * opacity;
+  if (sa <= 0) return dst;
+  const da = ((dst >>> 24) & 0xff) / 255;
+  const oa = sa + da * (1 - sa);
+  const dw = da * (1 - sa);
+  const r = Math.round(((src & 0xff) * sa + (dst & 0xff) * dw) / oa);
+  const g = Math.round((((src >>> 8) & 0xff) * sa + ((dst >>> 8) & 0xff) * dw) / oa);
+  const b = Math.round((((src >>> 16) & 0xff) * sa + ((dst >>> 16) & 0xff) * dw) / oa);
+  return packRgba(r, g, b, Math.round(oa * 255));
+}
+
+/** Packed straight-alpha src-over blend of src onto dst. */
+export function overRgba(dst: Rgba, src: Rgba): Rgba {
+  return overRgbaScaled(dst, src, 1);
 }
 
 /** Clamp rect to a w×h buffer; null when nothing remains. */

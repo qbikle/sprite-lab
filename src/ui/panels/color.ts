@@ -159,6 +159,10 @@ export class ColorPanel {
         this.refresh();
       }),
       o.bus.on('palette:changed', () => this.refresh()),
+      // undo/redo of palette commands announces only doc:changed{kind:'palette'}
+      o.bus.on('doc:changed', ({ scope }) => {
+        if (scope.kind === 'palette' || scope.kind === 'all') this.refresh();
+      }),
       o.bus.on('doc:replaced', () => {
         this.cur = o.getColor();
         this.prev = this.cur;
@@ -199,7 +203,16 @@ export class ColorPanel {
       add.className = 'sl-sw sl-sw-add';
       add.textContent = '+';
       add.title = 'add current color';
-      add.addEventListener('click', () => this.opts.addColor(this.opts.getColor()));
+      add.addEventListener('click', () => {
+        const c = this.opts.getColor();
+        if (c === 0) {
+          this.opts.bus.emit('status:message', {
+            text: 'pick a color first — transparent is not a swatch',
+          });
+          return;
+        }
+        this.opts.addColor(c);
+      });
       grid.appendChild(add);
     }
 

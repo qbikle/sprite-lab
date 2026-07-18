@@ -2,6 +2,7 @@
  *  Parsers/serializers are pure (node-testable); only the picker/download touch the DOM. */
 import type { Palette, Rgba } from '../core/contracts';
 import { hexToRgba, packRgba, rgbaToHex, unpackRgba } from '../core/pixels';
+import { downloadBlob } from './exporters/png';
 
 export function paletteToGpl(name: string, colors: readonly Rgba[]): string {
   const pad = (v: number): string => String(v).padStart(3, ' ');
@@ -13,9 +14,11 @@ export function paletteToGpl(name: string, colors: readonly Rgba[]): string {
   return lines.join('\n') + '\n';
 }
 
-/** Parse .gpl text → colors (opaque). Throws with a friendly message on garbage. */
+/** Parse .gpl text → colors (opaque, unless an Aseprite `Channels: RGBA`
+ *  header marks the 4th int per line as alpha). Throws on garbage. */
 export function gplToColors(text: string): { name: string; colors: Rgba[] } {
   let name = 'imported';
+  let rgba = false;
   const colors: Rgba[] = [];
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.trim();
@@ -26,14 +29,20 @@ export function gplToColors(text: string): { name: string; colors: Rgba[] } {
       if (n) name = n;
       continue;
     }
-    if (/^(gimp|columns)/i.test(line)) continue;
+    if (/^channels:\s*rgba$/i.test(line)) {
+      rgba = true;
+      continue;
+    }
+    if (/^(gimp|columns|channels)/i.test(line)) continue;
     const ints = line.match(/\d+/g);
     if (!ints || ints.length < 3) continue;
     const r = Number(ints[0]);
     const g = Number(ints[1]);
     const b = Number(ints[2]);
     if (r > 255 || g > 255 || b > 255) continue;
-    colors.push(packRgba(r, g, b, 255));
+    const a4 = Number(ints[3] ?? Infinity);
+    const a = rgba && a4 <= 255 ? a4 : 255;
+    colors.push(packRgba(r, g, b, a));
   }
   if (colors.length === 0) throw new Error('not a GIMP palette (.gpl)');
   return { name, colors };
@@ -88,10 +97,5 @@ export function openPaletteFile(onColors: (name: string, colors: Rgba[]) => void
 }
 
 export function downloadText(text: string, filename: string): void {
-  const url = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
+  downloadBlob(new Blob([text], { type: 'text/plain' }), filename);
 }

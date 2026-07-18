@@ -39,6 +39,33 @@ describe('paletteToGpl / gplToColors', () => {
     expect(parsed.colors).toEqual([RED, GREEN, MUD]);
   });
 
+  it('honors the 4th int as alpha in an Aseprite Channels: RGBA palette', () => {
+    const text = [
+      'GIMP Palette',
+      'Name: aseprite-rgba',
+      'Columns: 0',
+      'Channels: RGBA',
+      '#',
+      '255   0   0 255\tRed',
+      '  0 255   0 128\tHalf green',
+      ' 26  26  26  10\tSmoke',
+      '  1   2   3 999\talpha out of range',
+    ].join('\n');
+    const parsed = gplToColors(text);
+    expect(parsed.name).toBe('aseprite-rgba');
+    expect(parsed.colors).toEqual([
+      packRgba(255, 0, 0, 255),
+      packRgba(0, 255, 0, 128),
+      packRgba(26, 26, 26, 10),
+      packRgba(1, 2, 3, 255), // >255 is not an alpha value
+    ]);
+  });
+
+  it('keeps dropping trailing ints without a Channels: RGBA header', () => {
+    const parsed = gplToColors('GIMP Palette\n12 34 56 78 90\n');
+    expect(parsed.colors).toEqual([MUD]);
+  });
+
   it('takes the palette name from the Name: line, digits and all', () => {
     const parsed = gplToColors('GIMP Palette\nName: Sunset 8\n#\n1 2 3\n');
     expect(parsed.name).toBe('Sunset 8');

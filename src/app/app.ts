@@ -1,4 +1,5 @@
 /** App — composition root: builds core/render/tools/ui/io and wires them via the bus. */
+import type { Command, Tag } from '../core/contracts';
 import { Bus } from '../core/bus';
 import { History } from '../core/history';
 import { SpriteDoc } from '../core/doc';
@@ -39,7 +40,7 @@ import { Autosave } from '../io/autosave';
 import { installDragDrop, openFilePicker, type DecodedImage } from '../io/import';
 import { downloadBlob, exportPng } from '../io/exporters/png';
 import { downloadText } from '../io/palettes';
-import { exportSheet } from '../io/exporters/sheet';
+import { exportSheet, sheetFileName } from '../io/exporters/sheet';
 import { canEncodeWebp } from '../io/exporters/webp';
 import { framePxMap } from '../io/exporters/pxmap';
 import { docToSpriteFile, openSpritePicker, spriteFileName } from '../io/project';
@@ -121,7 +122,7 @@ export class App {
 
     const undo = (): void => { if (history.canUndo) history.undo(); };
     const redo = (): void => { if (history.canRedo) history.redo(); };
-    let opacityDrag: { index: number; at: number } | null = null;
+    let opacityDrag: { index: number; cmd: Command; at: number } | null = null;
 
     const toolbar = new ToolbarPanel({
       host: slots.toolbar,
@@ -211,15 +212,19 @@ export class App {
         history.commit(new MergeLayerDown(at));
         editor.setActiveLayer(at - 1);
       },
-      // slider drags fire per input event — replace-last so a drag = one history entry
+      // slider drags fire per input event — replace-last so a drag = one history entry.
+      // Only ever undo OUR OWN last commit (identity via peekUndo), never a stranger's.
       setOpacity: (i, opacity) => {
         const now = performance.now();
-        if (opacityDrag && opacityDrag.index === i && now - opacityDrag.at < 600 && history.canUndo) {
-          history.undo();
+        if (opacityDrag && (opacityDrag.index !== i || now - opacityDrag.at >= 600)) {
+          opacityDrag = null;
         }
-        history.commit(new SetLayerOpacity(i, opacity));
-        opacityDrag = { index: i, at: now };
+        if (opacityDrag && history.peekUndo() === opacityDrag.cmd) history.undo();
+        const cmd = new SetLayerOpacity(i, opacity);
+        history.commit(cmd);
+        opacityDrag = { index: i, cmd, at: now };
       },
+      endOpacityDrag: () => { opacityDrag = null; },
       setVisible: (i, visible) => history.commit(new SetLayerVisible(i, visible)),
       rename: (i, name) => history.commit(new RenameLayer(i, name)),
     });
@@ -255,11 +260,30 @@ export class App {
       editor.setActiveFrame(at + 1);
     };
     let activeTag: number | null = null;
+    let activeTagRef: Tag | null = null;
     const setRangeFromTag = (index: number | null): void => {
       const tag = index === null ? undefined : editor.doc.tags[index];
       activeTag = tag ? index : null;
+      activeTagRef = tag ?? null;
       player.setRange(tag ? { from: tag.from, to: tag.to, mode: tag.mode } : null);
     };
+    // Undo/redo of tag commands can delete or replace the tag the player loops —
+    // re-derive it (identity first, stored index as fallback) on every frames change.
+    this.teardown.push(bus.on('doc:changed', ({ scope }) => {
+      if (scope.kind !== 'frames' && scope.kind !== 'all') return;
+      if (activeTag === null) return;
+      const tags = editor.doc.tags;
+      const byIdentity = activeTagRef ? tags.indexOf(activeTagRef) : -1;
+      const index = byIdentity !== -1 ? byIdentity : activeTag;
+      const tag = tags[index];
+      if (!tag) {
+        setRangeFromTag(null);
+        return;
+      }
+      activeTag = index;
+      activeTagRef = tag;
+      player.setRange({ from: tag.from, to: tag.to, mode: tag.mode });
+    }));
 
     const timeline = new TimelinePanel({
       host: slots.timeline,
@@ -290,18 +314,9 @@ export class App {
       getOnion: () => editor.onion,
       setOnion: (config) => editor.setOnion(config),
       addTag: (tag) => history.commit(new AddTag(tag)),
-      removeTag: (index) => {
-        history.commit(new RemoveTag(index));
-        if (activeTag === null) return;
-        if (index === activeTag) setRangeFromTag(null);
-        else if (index < activeTag) activeTag -= 1;
-      },
-      updateTag: (index, next) => {
-        history.commit(new UpdateTag(index, next));
-        if (index === activeTag) {
-          player.setRange({ from: next.from, to: next.to, mode: next.mode });
-        }
-      },
+      // the doc:changed subscription above re-derives the active range on commit
+      removeTag: (index) => history.commit(new RemoveTag(index)),
+      updateTag: (index, next) => history.commit(new UpdateTag(index, next)),
       setRangeFromTag,
     });
     timeline.mount();
@@ -329,7 +344,7 @@ export class App {
 
     const encoder = new EncoderClient();
     this.teardown.push(() => encoder.dispose());
-    let encodeSeq = 0;
+    const status = (text: string): void => bus.emit('status:message', { text });
 
     const toggleTheme = (): void => {
       const next = document.documentElement.dataset['theme'] === 'light' ? 'dark' : 'light';
@@ -356,23 +371,34 @@ export class App {
         button.remove();
       });
     };
+    // A doc is worth a confirm when it has history in either direction OR any
+    // painted pixel (a freshly-opened file has pixels but an empty history).
+    const docHasPixels = (): boolean => {
+      const d = editor.doc;
+      for (const frame of d.frames) {
+        for (const [, buf] of d.celEntriesForFrame(frame.id)) {
+          for (const v of buf) if (v !== 0) return true;
+        }
+      }
+      return false;
+    };
     addAction('sl-act-new', 'new', () => {
-      if (history.canUndo && !window.confirm('Discard the current sprite?')) return;
+      const dirty = history.canUndo || history.canRedo || docHasPixels();
+      if (dirty && !window.confirm('Discard the current sprite?')) return;
       adopt(SpriteDoc.blank(32, 32, 'untitled'));
     });
-    addAction('sl-act-open', 'open', () => openFilePicker(openImage, adopt));
+    addAction('sl-act-open', 'open', () => openFilePicker(openImage, adopt, status));
     addAction('sl-act-export', 'export', () => {
       void exportPng(editor.doc, editor.activeFrame)
         .then((blob) => downloadBlob(blob, `${editor.doc.meta.name}.png`))
-        .catch(() => bus.emit('status:message', { text: 'png export failed' }));
+        .catch(() => status('png export failed'));
     });
-    const status = (text: string): void => bus.emit('status:message', { text });
 
     const exportSheetJson = (): void => {
       const name = editor.doc.meta.name;
       void exportSheet(editor.doc)
         .then(({ png, json }) => {
-          downloadBlob(png, `${name}.sheet.png`);
+          downloadBlob(png, sheetFileName(name));
           downloadText(json, `${name}.sheet.json`);
         })
         .catch(() => status('sheet export failed'));
@@ -389,10 +415,9 @@ export class App {
     const exportGif = (): void => {
       const d = editor.doc;
       const frames = d.frames.map((_, i) => framePayload(i));
-      encodeSeq += 1;
       void encoder
         .request(
-          { id: encodeSeq, kind: 'gif', w: d.width, h: d.height, frames },
+          { kind: 'gif', w: d.width, h: d.height, frames },
           frames.map((f) => f.pixels),
           (done, total) => status(`encoding gif ${done}/${total}`),
         )
@@ -401,7 +426,7 @@ export class App {
     };
 
     const exportWebpAnim = async (): Promise<void> => {
-      if (!canEncodeWebp()) {
+      if (!(await canEncodeWebp())) {
         status('animated webp needs a chromium browser — try gif');
         return;
       }
@@ -416,13 +441,13 @@ export class App {
         const img = ctx.createImageData(d.width, d.height);
         img.data.set(new Uint8ClampedArray(flat.buffer, flat.byteOffset, flat.length * 4));
         ctx.putImageData(img, 0, 0);
-        const blob = await canvas.convertToBlob({ type: 'image/webp' });
+        // quality 1 → Chromium emits lossless VP8L; the default is lossy VP8
+        const blob = await canvas.convertToBlob({ type: 'image/webp', quality: 1 });
         frames.push({ payload: await blob.arrayBuffer(), durationMs: d.frames[i]?.durationMs ?? 100 });
         status(`encoding webp ${i + 1}/${total}`);
       }
-      encodeSeq += 1;
       const out = await encoder.request(
-        { id: encodeSeq, kind: 'webp-mux', w: d.width, h: d.height, frames },
+        { kind: 'webp-mux', w: d.width, h: d.height, frames },
         frames.map((f) => f.payload),
       );
       downloadBlob(out, `${d.meta.name}.webp`);
@@ -463,7 +488,7 @@ export class App {
     ]);
     addAction('sl-act-theme', 'theme', toggleTheme);
 
-    this.teardown.push(installDragDrop(openImage, adopt));
+    this.teardown.push(installDragDrop(openImage, adopt, status));
 
     const autosave = new Autosave(bus, () => editor.doc);
     autosave.start();
@@ -522,7 +547,10 @@ export class App {
       bus.emit('camera:changed');
     };
     shortcuts.register({ keys: '+', desc: 'zoom in', group: 'canvas', run: () => zoomAt(1) });
-    shortcuts.register({ keys: '=', desc: 'zoom in', group: 'canvas', run: () => zoomAt(1) });
+    // '=' is an unshifted alias for '+' — active, but not a separate cheat-sheet row
+    shortcuts.register({
+      keys: '=', desc: 'zoom in', group: 'canvas', hidden: true, run: () => zoomAt(1),
+    });
     shortcuts.register({ keys: '-', desc: 'zoom out', group: 'canvas', run: () => zoomAt(-1) });
     shortcuts.register({
       keys: '0', desc: 'fit view', group: 'canvas',
@@ -621,6 +649,7 @@ export class App {
       item.textContent = label;
       item.addEventListener('click', () => {
         close();
+        button.focus();
         run();
       });
       buttons.push(item);
@@ -632,7 +661,13 @@ export class App {
       else close();
     };
     const onKeyDown = (e: KeyboardEvent): void => {
-      if (menu.hidden) return;
+      if (menu.hidden) {
+        if (e.key === 'ArrowDown' && document.activeElement === button) {
+          e.preventDefault();
+          open();
+        }
+        return;
+      }
       const step = (dir: 1 | -1): void => {
         const at = buttons.findIndex((b) => b === document.activeElement);
         const next = at < 0
@@ -652,6 +687,10 @@ export class App {
         e.preventDefault();
         e.stopPropagation();
         step(-1);
+      } else if (e.key === 'Enter' || e.key === ' ') {
+        // keep the global Enter=play/space=pan shortcuts out of item activation;
+        // the button's default click still fires
+        e.stopPropagation();
       }
     };
     const onOutside = (e: PointerEvent): void => {

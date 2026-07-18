@@ -1,6 +1,7 @@
 /** Lasso — freehand polygon, closed on up → ctx.setSelection. */
 import type { OverlayCtx, PixelPt, PointerInfo, ToolCtx, ToolId } from '../core/contracts';
 import { maskFromPolygon } from '../core/selection';
+import { themeColors } from '../render/theme';
 import { Tool } from './tool';
 
 export class LassoTool extends Tool {
@@ -52,7 +53,7 @@ export class LassoTool extends Tool {
     if (!this.down || this.pts.length < 2 || first === undefined || last === undefined) return;
     const g = o.g;
     g.save();
-    g.strokeStyle = accentColor();
+    g.strokeStyle = themeColors().accent;
     g.lineWidth = 1;
     g.beginPath();
     let started = false;
@@ -82,8 +83,4 @@ export class LassoTool extends Tool {
     if (last !== undefined && last.x === p.x && last.y === p.y) return;
     this.pts.push(p);
   }
-}
-
-function accentColor(): string {
-  return getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#ffb454';
 }

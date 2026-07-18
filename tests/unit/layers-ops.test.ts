@@ -82,6 +82,26 @@ describe('AddLayer', () => {
     h.redo();
     expect(must(doc.layers[1]).id).toBe(second);
   });
+
+  it('sizeBytes grows to cover cels captured by a later revert', () => {
+    const doc = SpriteDoc.blank(4, 4, 't');
+    const h = new History(doc, new Bus());
+    const add = new AddLayer(0);
+    h.commit(add);
+    expect(add.sizeBytes).toBe(128);
+
+    const key = doc.celKeyAt(1, 0);
+    const blank = new Uint32Array(16);
+    const green = new Uint32Array(16);
+    green[0] = GREEN;
+    h.commit(must(PixelPatch.fromBuffers(key, 4, 4, blank, green, 'paint')));
+
+    h.undo(); // undo paint — leaves a blank cel on the added layer
+    h.undo(); // undo add — captures that cel
+    expect(add.sizeBytes).toBe(128 + 4 * 4 * 4);
+    h.redo();
+    expect(add.sizeBytes).toBe(128 + 4 * 4 * 4);
+  });
 });
 
 describe('RemoveLayer', () => {

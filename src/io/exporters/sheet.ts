@@ -40,6 +40,12 @@ export function packSheetLayout(doc: SpriteDoc): SheetLayout {
   return { cols, rows };
 }
 
+/** The sheet PNG's canonical file name — the JSON's `sheet` field and the
+ *  downloaded file must agree, or consumers 404. */
+export function sheetFileName(base: string): string {
+  return `${base}-sheet.png`;
+}
+
 function medianDuration(durations: readonly number[]): number {
   const sorted = [...durations].sort((a, b) => a - b);
   const mid = sorted.length >> 1;
@@ -53,7 +59,7 @@ function medianDuration(durations: readonly number[]): number {
  *  pretty-printed. fps = round(1000 / median(row frame durations)). */
 export function buildSheetJson(doc: SpriteDoc, layout: SheetLayout): string {
   const data = {
-    sheet: `${doc.meta.name}-sheet.png`,
+    sheet: sheetFileName(doc.meta.name),
     frameW: doc.width,
     frameH: doc.height,
     rows: layout.rows.map((row, r) => {

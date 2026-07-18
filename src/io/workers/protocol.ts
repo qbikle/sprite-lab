@@ -5,10 +5,14 @@ export interface EncodeFramePayload {
   durationMs: number;
 }
 
+/** id is assigned by the client on send — callers never set it. */
 export type EncodeRequest =
-  | { id: number; kind: 'gif'; w: number; h: number; frames: EncodeFramePayload[] }
-  | { id: number; kind: 'webp-mux'; w: number; h: number;
+  | { id?: number; kind: 'gif'; w: number; h: number; frames: EncodeFramePayload[] }
+  | { id?: number; kind: 'webp-mux'; w: number; h: number;
       frames: { payload: ArrayBuffer; durationMs: number }[] };
+
+/** Request as delivered to the worker — the client always stamps the id. */
+export type EncodeRequestWire = EncodeRequest & { id: number };
 
 export type EncodeResponse =
   | { id: number; kind: 'done'; bytes: ArrayBuffer; mime: string }
@@ -29,7 +33,12 @@ export class EncoderClient {
     const id = this.nextId++;
     return new Promise<Blob>((resolve, reject) => {
       this.pending.set(id, { resolve, reject, onProgress });
-      this.ensureWorker().postMessage({ ...req, id }, transfer);
+      try {
+        this.ensureWorker().postMessage({ ...req, id }, transfer);
+      } catch (err) {
+        this.pending.delete(id);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      }
     });
   }
 
@@ -55,10 +64,21 @@ export class EncoderClient {
       else entry.resolve(new Blob([res.bytes], { type: res.mime }));
     };
     worker.onerror = (e: ErrorEvent) => {
-      this.failAll(new Error(e.message || 'encoder worker crashed'));
+      this.discard(worker, new Error(e.message || 'encoder worker crashed'));
+    };
+    worker.onmessageerror = () => {
+      this.discard(worker, new Error('encoder worker message deserialization failed'));
     };
     this.worker = worker;
     return worker;
+  }
+
+  /** A dead Worker never answers again — terminate and drop it so the next
+   *  request respawns a fresh one instead of hanging forever. */
+  private discard(worker: Worker, err: Error): void {
+    worker.terminate();
+    if (this.worker === worker) this.worker = null;
+    this.failAll(err);
   }
 
   private failAll(err: Error): void {

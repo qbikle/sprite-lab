@@ -153,6 +153,41 @@ function parseGif(bytes: Uint8Array): ParsedGif {
   return { width, height, lsdPacked, gct, netscape, frames, trailer };
 }
 
+/** Raw sub-block lengths of each frame's LZW data section (encoder blocking). */
+function dataSubBlockLengths(bytes: Uint8Array): number[][] {
+  const skipSubBlocks = (o: number): number => {
+    for (;;) {
+      const len = bytes[o] ?? 0;
+      o++;
+      if (len === 0) return o;
+      o += len;
+    }
+  };
+  const lengths: number[][] = [];
+  let off = 13 + 3 * (2 << ((bytes[10] ?? 0) & 0x07));
+  while (off < bytes.length) {
+    const b = bytes[off] ?? 0;
+    if (b === 0x3b) break;
+    if (b === 0x21) {
+      off = skipSubBlocks(off + 2); // ext header + data are all length-prefixed
+      continue;
+    }
+    if (b !== 0x2c) throw new Error(`dataSubBlockLengths: unexpected block 0x${b.toString(16)}`);
+    let o = off + 11;
+    const seq: number[] = [];
+    for (;;) {
+      const len = bytes[o] ?? 0;
+      o++;
+      if (len === 0) break;
+      seq.push(len);
+      o += len;
+    }
+    lengths.push(seq);
+    off = o;
+  }
+  return lengths;
+}
+
 /* ── fixtures ───────────────────────────────────────────── */
 
 const RED = packRgba(255, 0, 0, 255);
@@ -264,6 +299,105 @@ describe('encodeGif — quantization', () => {
       const db = ((src >>> 16) & 0xff) - (c?.[2] ?? 999);
       expect(dr * dr + dg * dg + db * db).toBeLessThanOrEqual(3 * 32 * 32);
     }
+  });
+});
+
+describe('encodeGif — timing', () => {
+  it('keeps the accumulated timeline within 1cs of the target (24 × 42ms)', () => {
+    const frames: GifFrame[] = Array.from({ length: 24 }, () => ({ pixels: F1, durationMs: 42 }));
+    const gif = parseGif(encodeGif(frames, 4, 4));
+    const totalCs = gif.frames.reduce((s, f) => s + f.delay, 0);
+    // per-frame round(42/10)=4 would emit 960ms (-4.8%); accumulated stays exact
+    expect(Math.abs(totalCs * 10 - 1008)).toBeLessThanOrEqual(10);
+    for (const f of gif.frames) expect(f.delay).toBeGreaterThanOrEqual(2);
+  });
+
+  it('still enforces the 2cs floor on sub-2cs frames (16.7ms)', () => {
+    const frames: GifFrame[] = Array.from({ length: 5 }, () => ({ pixels: F1, durationMs: 16.7 }));
+    const gif = parseGif(encodeGif(frames, 4, 4));
+    for (const f of gif.frames) expect(f.delay).toBe(2);
+  });
+
+  it('clamps a >655s frame delay to the u16 maximum instead of wrapping', () => {
+    const gif = parseGif(encodeGif([
+      { pixels: F1, durationMs: 700_000 },
+      { pixels: F2, durationMs: 700_000 },
+    ], 4, 4));
+    expect(gif.frames[0]?.delay).toBe(0xffff);
+    for (const f of gif.frames) expect(f.delay).toBeLessThanOrEqual(0xffff);
+  });
+});
+
+describe('encodeGif — encoder edge coverage', () => {
+  const noisePixels = (count: number, colors: readonly number[]): Uint32Array => {
+    const px = new Uint32Array(count);
+    let seed = 0x1234abcd;
+    for (let i = 0; i < count; i++) {
+      seed = (seed * 1664525 + 1013904223) >>> 0;
+      // high bits only — an LCG's low bits are periodic, not noise
+      px[i] = colors[Math.floor((seed / 0x100000000) * colors.length)] ?? 0;
+    }
+    return px;
+  };
+
+  it('survives LZW 4096-dict resets on a 256×256 noise frame (decode-verified)', () => {
+    const colors: number[] = [];
+    for (let i = 0; i < 64; i++) colors.push(packRgba((i * 37) % 256, (i * 91) % 256, (i * 151) % 256, 255));
+    const px = noisePixels(256 * 256, colors);
+    // 64-symbol noise emits far more than 4096 - eoi codes → clear-code resets
+    // are mandatory for the stream to decode back to the exact index map.
+    const gif = parseGif(encodeGif([{ pixels: px, durationMs: 100 }], 256, 256));
+    const frame = gif.frames[0];
+    expect(frame?.indices).toHaveLength(256 * 256);
+    const slotByColor = new Map<number, number>();
+    gif.gct.forEach((c, i) => {
+      // slot 0 is transparency; padding entries repeat (0,0,0) — first slot wins
+      const key = c[0] | (c[1] << 8) | (c[2] << 16);
+      if (i >= 1 && !slotByColor.has(key)) slotByColor.set(key, i);
+    });
+    let mismatch = -1;
+    for (let i = 0; i < px.length; i++) {
+      const want = slotByColor.get((px[i] ?? 0) & 0xffffff) ?? -1;
+      if (frame?.indices[i] !== want) {
+        mismatch = i;
+        break;
+      }
+    }
+    expect(mismatch).toBe(-1);
+  });
+
+  it('packs full 255-byte sub-blocks and continues the stream across them', () => {
+    const colors = [packRgba(10, 20, 30, 255), packRgba(250, 240, 230, 255)];
+    const px = noisePixels(64 * 64, colors);
+    const bytes = encodeGif([{ pixels: px, durationMs: 100 }], 64, 64);
+    const seqs = dataSubBlockLengths(bytes);
+    expect(seqs).toHaveLength(1);
+    const seq = seqs[0] ?? [];
+    expect(seq.length).toBeGreaterThanOrEqual(3);
+    for (const len of seq.slice(0, -1)) expect(len).toBe(255); // exact boundary, every time
+    expect(seq.some((len) => len === 255)).toBe(true);
+    const gif = parseGif(bytes);
+    expect(gif.frames[0]?.indices).toEqual(expectedIndices(px, gif.gct));
+  });
+
+  it('handles the 256-color palette boundary (255 colors + transparent, minCodeSize 8)', () => {
+    const px = new Uint32Array(16 * 16);
+    for (let i = 1; i < px.length; i++) {
+      px[i] = packRgba(i % 256, (i * 7) % 256, (i * 13) % 256, 255); // 255 unique colors
+    }
+    px[0] = 0; // transparent
+    const gif = parseGif(encodeGif([{ pixels: px, durationMs: 100 }], 16, 16));
+    expect(gif.lsdPacked & 0x07).toBe(7); // 2^(7+1) = 256-entry table
+    expect(gif.gct).toHaveLength(256);
+    expect(gif.frames[0]?.indices).toEqual(expectedIndices(px, gif.gct));
+    expect(gif.frames[0]?.indices[0]).toBe(0);
+  });
+
+  it('encodes an all-transparent frame as pure index 0', () => {
+    const px = new Uint32Array(16); // alpha 0 everywhere
+    const gif = parseGif(encodeGif([{ pixels: px, durationMs: 100 }], 4, 4));
+    expect(gif.frames[0]?.gcePacked).toBe(0x09); // transparent flag still set
+    expect(gif.frames[0]?.indices).toEqual(new Array<number>(16).fill(0));
   });
 });
 

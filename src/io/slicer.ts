@@ -58,12 +58,17 @@ function gcd(a: number, b: number): number {
   return x;
 }
 
-/** Guess a square frame size from the sheet dims (v1 default was 32). */
+/** Guess a square frame size from the sheet dims (v1 default was 32).
+ *  The guess always divides both dims, or is the 32 fallback — a clamped gcd
+ *  that stops dividing (gcd 2 → 8) would crop the sheet. */
 export function guessFrameSize(sheetW: number, sheetH: number): number {
   for (const size of SIZE_TRIES) {
     if (sheetW % size === 0 && sheetH % size === 0) return size;
   }
   const g = gcd(sheetW, sheetH);
-  if (g > 1) return Math.min(128, Math.max(8, g));
+  if (g > 1) {
+    const clamped = Math.min(128, Math.max(8, g));
+    if (sheetW % clamped === 0 && sheetH % clamped === 0) return clamped;
+  }
   return 32;
 }

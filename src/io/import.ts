@@ -1,7 +1,7 @@
 /** PNG + .sprite in: file picker + drag-drop. Images decode to raw pixels and
  *  route via onImage (app decides direct adopt vs sheet importer); .sprite
  *  files load through the project loader and route via onSprite. */
-import { SpriteDoc } from '../core/doc';
+import type { SpriteDoc } from '../core/doc';
 import { spriteFileToDoc } from './project';
 
 export interface DecodedImage {
@@ -49,7 +49,7 @@ export async function decodePng(file: Blob, name?: string): Promise<DecodedImage
   }
   let bmp: ImageBitmap;
   try {
-    bmp = await createImageBitmap(file);
+    bmp = await createImageBitmap(file, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
   } catch {
     throw new Error('Could not decode that file as an image — is it a valid PNG?');
   }
@@ -62,28 +62,27 @@ export async function decodePng(file: Blob, name?: string): Promise<DecodedImage
   }
 }
 
-/** Whole image as a single-frame doc (small images; sheets go via onImage routing). */
-export async function pngToDoc(file: Blob, name?: string): Promise<SpriteDoc> {
-  const img = await decodePng(file, name);
-  return SpriteDoc.fromImage(img.pixels, img.w, img.h, img.name);
-}
-
 function routeFile(
   file: File,
   onImage: (img: DecodedImage) => void,
   onSprite: (doc: SpriteDoc) => void,
+  onStatus?: (msg: string) => void,
 ): void {
+  const report = (err: unknown): void => {
+    onStatus?.(err instanceof Error ? err.message : String(err));
+  };
   if (isSpriteFile(file)) {
-    void spriteFileToDoc(file).then(onSprite).catch(() => undefined);
+    void spriteFileToDoc(file).then(onSprite).catch(report);
     return;
   }
-  void decodePng(file).then(onImage).catch(() => undefined);
+  void decodePng(file).then(onImage).catch(report);
 }
 
 /** Whole-window drag-drop: images → onImage, .sprite files → onSprite. Returns uninstall. */
 export function installDragDrop(
   onImage: (img: DecodedImage) => void,
   onSprite: (doc: SpriteDoc) => void,
+  onStatus?: (msg: string) => void,
 ): () => void {
   const hasFiles = (e: DragEvent): boolean =>
     e.dataTransfer !== null && Array.from(e.dataTransfer.types).includes('Files');
@@ -104,7 +103,22 @@ export function installDragDrop(
     const all = Array.from(files);
     const file = all.find(isSpriteFile) ?? all.find((f) => f.type.startsWith('image/'));
     if (!file) return;
-    routeFile(file, onImage, onSprite);
+    const ignored = all.length - 1;
+    const reportIgnored = (): void => {
+      if (ignored > 0) onStatus?.(`imported ${file.name} — ignored ${ignored} other file(s)`);
+    };
+    routeFile(
+      file,
+      (img) => {
+        onImage(img);
+        reportIgnored();
+      },
+      (doc) => {
+        onSprite(doc);
+        reportIgnored();
+      },
+      onStatus,
+    );
   };
 
   window.addEventListener('dragover', onDragOver);
@@ -121,6 +135,7 @@ export function installDragDrop(
 export function openFilePicker(
   onImage: (img: DecodedImage) => void,
   onSprite: (doc: SpriteDoc) => void,
+  onStatus?: (msg: string) => void,
 ): void {
   const input = document.createElement('input');
   input.type = 'file';
@@ -130,7 +145,7 @@ export function openFilePicker(
   input.addEventListener('change', () => {
     const file = input.files?.[0];
     cleanup();
-    if (file) routeFile(file, onImage, onSprite);
+    if (file) routeFile(file, onImage, onSprite, onStatus);
   }, { once: true });
   input.addEventListener('cancel', cleanup, { once: true });
   document.body.appendChild(input);

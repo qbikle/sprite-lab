@@ -6,18 +6,24 @@ export interface WebpFrame {
   durationMs: number;
 }
 
-let webpProbe: boolean | null = null;
+let webpProbe: Promise<boolean> | null = null;
 
-/** True when this browser can encode webp frames off-thread.
- *  Compromise: convertToBlob({type:'image/webp'}) support is only detectable
- *  async, but callers need a sync answer — so heuristic: OffscreenCanvas
- *  exists and the UA is not Safari-proper (Safari silently falls back to png). */
-export function canEncodeWebp(): boolean {
-  if (webpProbe === null) {
-    const ua = typeof navigator === 'undefined' ? '' : navigator.userAgent;
-    const safari = /safari/i.test(ua) && !/chrome|chromium|crios|edg/i.test(ua);
-    webpProbe = typeof OffscreenCanvas !== 'undefined' && !safari;
+async function probeWebp(): Promise<boolean> {
+  if (typeof OffscreenCanvas === 'undefined') return false;
+  try {
+    const blob = await new OffscreenCanvas(1, 1).convertToBlob({ type: 'image/webp' });
+    return blob.type === 'image/webp';
+  } catch {
+    return false;
   }
+}
+
+/** True when this browser can encode webp frames off-thread. Memoized real
+ *  probe: encoders that don't support webp (Safari, Firefox) silently fall
+ *  back to png in convertToBlob, so the blob's actual type is the answer —
+ *  UA sniffing false-positives on iOS/Firefox skins. */
+export function canEncodeWebp(): Promise<boolean> {
+  webpProbe ??= probeWebp();
   return webpProbe;
 }
 

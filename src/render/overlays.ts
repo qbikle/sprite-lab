@@ -4,6 +4,7 @@ import type {
   CameraView, FloatBuffer, OverlayCtx, PixelPt, SelectionState, SymmetryMode,
 } from '../core/contracts';
 import { stampRect } from '../tools/brush';
+import { themeColors } from './theme';
 
 export interface OverlayOpts {
   docW: number;
@@ -15,6 +16,7 @@ export interface OverlayOpts {
   float: FloatBuffer | null;
   symmetry: SymmetryMode;
   antPhase: number;       // css px, advances ~8fps; dash period is 8
+  playing: boolean;       // ants suppressed while animating (contract)
 }
 
 export class Overlays {
@@ -23,8 +25,8 @@ export class Overlays {
     const cam = o.camera;
     const dpr = window.devicePixelRatio || 1;
     const snap = (v: number): number => Math.round(v * dpr) / dpr;
-    const styles = getComputedStyle(document.documentElement);
-    const accent = styles.getPropertyValue('--accent').trim() || '#ffb454';
+    const colors = themeColors();
+    const accent = colors.accent;
 
     const org = cam.docToScreen({ x: 0, y: 0 });
     const x0 = snap(org.x);
@@ -32,27 +34,27 @@ export class Overlays {
     const x1 = snap(org.x + opts.docW * cam.zoom);
     const y1 = snap(org.y + opts.docH * cam.zoom);
 
-    const border = styles.getPropertyValue('--border').trim() || '#000';
-    this.frameRect(g, x0 - 1, y0 - 1, x1 - x0 + 2, y1 - y0 + 2, 1, border);
+    this.frameRect(g, x0 - 1, y0 - 1, x1 - x0 + 2, y1 - y0 + 2, 1, colors.border);
 
     if (opts.grid && cam.zoom >= 4) {
       // grid follows --text so it stays visible on both themes
-      const text = styles.getPropertyValue('--text').trim() || '#888';
-      this.drawGrid(g, cam, opts, org, dpr, text);
+      this.drawGrid(g, cam, opts, org, dpr, colors.text);
     }
 
     if (opts.symmetry !== 'off') {
       this.drawSymmetry(g, cam, opts, snap, dpr, accent, x0, y0, x1, y1);
     }
     // while a float is live, its ants are the selection — drawing both outlines confuses
-    if (opts.selection && !opts.float) {
+    if (opts.selection && !opts.float && !opts.playing) {
       const path = this.selectionOutline(cam, opts.selection, opts.docW, opts.docH, snap, dpr);
       this.strokeAnts(g, path, dpr, opts.antPhase);
     }
-    if (opts.float) this.drawFloatAnts(g, cam, opts.float, snap, dpr, accent, opts.antPhase);
+    if (opts.float && !opts.playing) {
+      this.drawFloatAnts(g, cam, opts.float, snap, dpr, accent, opts.antPhase);
+    }
 
     if (opts.hover) {
-      this.drawCursor(g, cam, opts.hover, opts.brushSize, snap, accent);
+      this.drawCursor(g, cam, opts.hover, opts.brushSize, opts.docW, opts.docH, snap, accent);
     }
   }
 
@@ -182,7 +184,7 @@ export class Overlays {
       path.moveTo(x0, my);
       path.lineTo(x1, my);
     }
-    g.lineWidth = 1;
+    g.lineWidth = 1 / dpr;
     g.strokeStyle = accent;
     g.globalAlpha = 0.5;
     g.setLineDash([6, 4]);
@@ -228,11 +230,17 @@ export class Overlays {
 
   private drawCursor(
     g: CanvasRenderingContext2D, cam: CameraView, hover: PixelPt, brushSize: number,
-    snap: (v: number) => number, accent: string,
+    docW: number, docH: number, snap: (v: number) => number, accent: string,
   ): void {
     const r = stampRect(hover, brushSize);
-    const a = cam.docToScreen({ x: r.x, y: r.y });
-    const b = cam.docToScreen({ x: r.x + r.w, y: r.y + r.h });
+    // footprint clipped to doc bounds — the stamp never lands outside either
+    const cx0 = Math.max(0, r.x);
+    const cy0 = Math.max(0, r.y);
+    const cx1 = Math.min(docW, r.x + r.w);
+    const cy1 = Math.min(docH, r.y + r.h);
+    if (cx1 <= cx0 || cy1 <= cy0) return;
+    const a = cam.docToScreen({ x: cx0, y: cy0 });
+    const b = cam.docToScreen({ x: cx1, y: cy1 });
     const x = snap(a.x);
     const y = snap(a.y);
     const w = snap(b.x) - x;

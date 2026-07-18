@@ -1,5 +1,5 @@
 /** Bottom panel: frame thumbnails + durations + playback + onion + tags. */
-import type { OnionConfig, Tag, TagMode } from '../../core/contracts';
+import type { CelKey, OnionConfig, Tag, TagMode } from '../../core/contracts';
 import type { Bus } from '../../core/bus';
 import type { SpriteDoc } from '../../core/doc';
 import { icon } from '../icons';
@@ -103,6 +103,8 @@ export class TimelinePanel {
   private activeTagIdx: number | null = null;
   private pendingRename: number | null = null;
   private repaintRaf: number | null = null;
+  private repaintAllPending = false;
+  private readonly pendingThumbs = new Set<number>();
 
   constructor(opts: TimelineOpts) {
     this.opts = opts;
@@ -189,7 +191,8 @@ export class TimelinePanel {
     this.unsubs.push(
       o.bus.on('doc:changed', ({ scope }) => {
         if (scope.kind === 'frames' || scope.kind === 'all') this.rebuildAll();
-        else if (scope.kind === 'cels' || scope.kind === 'layers') this.scheduleRepaint();
+        else if (scope.kind === 'cels') this.scheduleRepaint(this.framesForCels(scope.cels));
+        else if (scope.kind === 'layers') this.scheduleRepaint(null);
       }),
       o.bus.on('doc:replaced', () => {
         this.scratch = null;
@@ -329,7 +332,13 @@ export class TimelinePanel {
       dur.value = String(frame.durationMs);
       dur.title = 'frame duration (ms)';
       dur.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') dur.blur();
+        if (e.key === 'Enter') {
+          dur.blur();
+        } else if (e.key === 'Escape') {
+          e.stopPropagation(); // revert the edit only — never the global Esc chain
+          dur.value = String(frame.durationMs);
+          dur.blur();
+        }
       });
       dur.addEventListener('blur', () => this.commitDuration(i, dur));
       cell.append(thumb, num, dur);
@@ -357,17 +366,46 @@ export class TimelinePanel {
     this.cells[index]?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }
 
-  /** Thumbs repaint whole-strip, rAF-coalesced — cheap at ≤64 frames, and
-   *  collapses the per-pointermove doc:changed spam during a stroke. */
-  private scheduleRepaint(): void {
+  /** Cel-scoped changes map to their frame indices — a stroke repaints ONE
+   *  thumb, not the whole strip. rAF-coalesced; null = repaint everything. */
+  private framesForCels(cels: ReadonlyArray<{ key: CelKey }>): number[] {
+    const doc = this.opts.getDoc();
+    const out: number[] = [];
+    for (const { key } of cels) {
+      const frameId = key.split(':')[1];
+      if (frameId === undefined) continue;
+      const i = doc.frames.findIndex((f) => f.id === frameId);
+      if (i !== -1 && !out.includes(i)) out.push(i);
+    }
+    return out;
+  }
+
+  private scheduleRepaint(frames: readonly number[] | null): void {
+    if (frames === null) this.repaintAllPending = true;
+    else for (const i of frames) this.pendingThumbs.add(i);
     if (this.repaintRaf !== null) return;
     this.repaintRaf = requestAnimationFrame(() => {
       this.repaintRaf = null;
-      this.repaintThumbsNow();
+      this.flushRepaint();
     });
   }
 
+  private flushRepaint(): void {
+    if (this.repaintAllPending) {
+      this.repaintThumbsNow();
+      return;
+    }
+    const doc = this.opts.getDoc();
+    for (const i of this.pendingThumbs) {
+      const thumb = this.thumbs[i];
+      if (thumb && i < doc.frames.length) this.paintThumb(thumb, i);
+    }
+    this.pendingThumbs.clear();
+  }
+
   private repaintThumbsNow(): void {
+    this.repaintAllPending = false;
+    this.pendingThumbs.clear();
     const doc = this.opts.getDoc();
     const count = Math.min(this.thumbs.length, doc.frames.length);
     for (let i = 0; i < count; i++) {
@@ -600,8 +638,12 @@ export class TimelinePanel {
       else this.rebuildTags();
     };
     input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') input.blur();
-      else if (e.key === 'Escape') finish(false);
+      if (e.key === 'Enter') {
+        input.blur();
+      } else if (e.key === 'Escape') {
+        e.stopPropagation(); // cancel the rename only — never the global Esc chain
+        finish(false);
+      }
     });
     input.addEventListener('blur', () => finish(true));
     input.addEventListener('pointerdown', (e) => e.stopPropagation());

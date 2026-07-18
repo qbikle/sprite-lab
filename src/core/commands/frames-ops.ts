@@ -2,14 +2,9 @@
  *  Ids and captured state are allocated ONCE (first apply) and reused on redo. */
 import type { CelKey, Command, DirtyScope, Frame, Tag } from '../contracts';
 import type { SpriteDoc } from '../doc';
+import { moveItem } from '../doc';
 
 type CelEntry = [CelKey, Uint32Array];
-
-function moveItem<T>(arr: T[], from: number, to: number, ctx: string): void {
-  const [item] = arr.splice(from, 1);
-  if (item === undefined) throw new RangeError(`${ctx}: bad index ${from}`);
-  arr.splice(to, 0, item);
-}
 
 /** Shift/shrink tag ranges for a frame removal; a tag collapsing to nothing drops. */
 function adjustTagsForRemoval(tags: readonly Tag[], index: number): Tag[] {
@@ -28,7 +23,6 @@ function adjustTagsForRemoval(tags: readonly Tag[], index: number): Tag[] {
 /** Insert a blank frame after `afterIndex` (-1 = at start). */
 export class AddFrame implements Command {
   readonly label = 'add frame';
-  readonly sizeBytes = 128;
   readonly dirty: DirtyScope = { kind: 'frames' };
 
   private readonly afterIndex: number;
@@ -39,6 +33,12 @@ export class AddFrame implements Command {
   constructor(afterIndex: number, durationMs = 100) {
     this.afterIndex = afterIndex;
     this.durationMs = durationMs;
+  }
+
+  get sizeBytes(): number {
+    let n = 128;
+    for (const [, buf] of this.cels) n += buf.byteLength;
+    return n;
   }
 
   apply(doc: SpriteDoc): void {

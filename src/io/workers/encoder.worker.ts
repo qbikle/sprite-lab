@@ -1,13 +1,13 @@
 /** Encode worker: heavy gif/webp work off the UI thread. Transferable-based. */
 import { encodeGif } from '../exporters/gif';
 import { muxAnimatedWebp } from '../exporters/webp';
-import type { EncodeRequest, EncodeResponse } from './protocol';
+import type { EncodeRequestWire, EncodeResponse } from './protocol';
 
 const post = (res: EncodeResponse, transfer: Transferable[] = []): void => {
   (self as unknown as Worker).postMessage(res, transfer);
 };
 
-self.onmessage = (e: MessageEvent<EncodeRequest>) => {
+self.onmessage = (e: MessageEvent<EncodeRequestWire>) => {
   const req = e.data;
   try {
     if (req.kind === 'gif') {
