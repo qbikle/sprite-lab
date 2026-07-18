@@ -2,6 +2,7 @@
 import type { OnionConfig, Tag, TagMode } from '../../core/contracts';
 import type { Bus } from '../../core/bus';
 import type { SpriteDoc } from '../../core/doc';
+import { icon } from '../icons';
 
 export interface TimelineOpts {
   host: HTMLElement;
@@ -38,115 +39,6 @@ const PITCH = CELL_W + GAP;
 const PAD = 6; // .sl-tl-scroll horizontal padding
 const DRAG_THRESHOLD = 4;
 const MODES: readonly TagMode[] = ['loop', 'pingpong', 'hold'];
-
-const PLAY_PX = [
-  '#....',
-  '##...',
-  '###..',
-  '####.',
-  '#####',
-  '####.',
-  '###..',
-  '##...',
-  '#....',
-] as const;
-
-const PAUSE_PX = [
-  '##.##',
-  '##.##',
-  '##.##',
-  '##.##',
-  '##.##',
-  '##.##',
-  '##.##',
-  '##.##',
-  '##.##',
-] as const;
-
-const PREV_PX = [
-  '##.....#',
-  '##....##',
-  '##...###',
-  '##..####',
-  '##...###',
-  '##....##',
-  '##.....#',
-] as const;
-
-const DUP_PX = [
-  '..#######',
-  '..#.....#',
-  '..#.....#',
-  '#######.#',
-  '#.....#.#',
-  '#.....#.#',
-  '#.....###',
-  '#.....#..',
-  '#######..',
-] as const;
-
-const TRASH_PX = [
-  '..####..',
-  '########',
-  '.#....#.',
-  '.#.##.#.',
-  '.#.##.#.',
-  '.#.##.#.',
-  '.#....#.',
-  '..####..',
-] as const;
-
-const REV_PX = [
-  '..#.....#..',
-  '.##.....##.',
-  '###########',
-  '.##.....##.',
-  '..#.....#..',
-] as const;
-
-const ONION_PX = [
-  '.#.######.#.',
-  '...#....#...',
-  '.#.#....#.#.',
-  '.#.#....#.#.',
-  '...#....#...',
-  '.#.######.#.',
-] as const;
-
-const STEP_UP_PX = [
-  '..#..',
-  '.###.',
-  '#####',
-] as const;
-
-const SVG_NS = 'http://www.w3.org/2000/svg';
-
-function pxIcon(rows: readonly string[], width: number): SVGSVGElement {
-  const cols = rows[0]?.length ?? 1;
-  const svg = document.createElementNS(SVG_NS, 'svg');
-  svg.setAttribute('viewBox', `0 0 ${cols} ${rows.length}`);
-  svg.setAttribute('width', String(width));
-  svg.setAttribute('height', String(Math.round((width * rows.length) / cols)));
-  svg.setAttribute('aria-hidden', 'true');
-  rows.forEach((row, y) => {
-    for (let x = 0; x < row.length; x++) {
-      if (row[x] !== '#') continue;
-      const rect = document.createElementNS(SVG_NS, 'rect');
-      rect.setAttribute('x', String(x));
-      rect.setAttribute('y', String(y));
-      rect.setAttribute('width', '1');
-      rect.setAttribute('height', '1');
-      rect.setAttribute('fill', 'currentColor');
-      rect.setAttribute('shape-rendering', 'crispEdges');
-      svg.appendChild(rect);
-    }
-  });
-  return svg;
-}
-
-function mirrored(rows: readonly string[]): string[] {
-  return rows.map((row) => [...row].reverse().join(''));
-}
 
 function div(className: string): HTMLDivElement {
   const el = document.createElement('div');
@@ -224,21 +116,21 @@ export class TimelinePanel {
     const play = this.tlBtn('', () => o.togglePlay());
     this.playBtn = play;
     const prev = this.tlBtn('previous frame (←)', () => this.step(-1));
-    prev.appendChild(pxIcon(PREV_PX, 10));
+    prev.appendChild(icon('frame-prev'));
     const next = this.tlBtn('next frame (→)', () => this.step(1));
-    next.appendChild(pxIcon(mirrored(PREV_PX), 10));
+    next.appendChild(icon('frame-next'));
     const counter = document.createElement('span');
     counter.className = 'sl-tl-count';
     this.counterEl = counter;
     const add = this.tlBtn('new frame (N)', () => o.addFrame());
-    add.textContent = '+';
+    add.appendChild(icon('plus'));
     const dup = this.tlBtn('duplicate frame (shift+N)', () => o.duplicateFrame());
-    dup.appendChild(pxIcon(DUP_PX, 11));
+    dup.appendChild(icon('frame-dup'));
     const del = this.tlBtn('delete frame', () => o.removeFrame());
-    del.appendChild(pxIcon(TRASH_PX, 10));
+    del.appendChild(icon('trash'));
     this.delBtn = del;
     const rev = this.tlBtn('reverse frames', () => o.reverseFrames());
-    rev.appendChild(pxIcon(REV_PX, 13));
+    rev.appendChild(icon('reverse'));
     this.revBtn = rev;
 
     const right = div('sl-tl-right');
@@ -246,7 +138,7 @@ export class TimelinePanel {
       const cfg = o.getOnion();
       o.setOnion({ ...cfg, enabled: !cfg.enabled });
     });
-    onion.appendChild(pxIcon(ONION_PX, 14));
+    onion.appendChild(icon('onion'));
     this.onionBtn = onion;
     const ctl = document.createElement('span');
     ctl.className = 'sl-tl-onionctl';
@@ -353,8 +245,7 @@ export class TimelinePanel {
       btn.type = 'button';
       btn.className = 'sl-tl-stepbtn';
       btn.title = `onion ${key} ${d > 0 ? '+1' : '-1'}`;
-      const px = d > 0 ? STEP_UP_PX : [...STEP_UP_PX].reverse();
-      btn.appendChild(pxIcon(px, 7));
+      btn.appendChild(icon(d > 0 ? 'step-up' : 'step-down'));
       btn.addEventListener('click', () => {
         const cfg = this.opts.getOnion();
         const v = Math.max(0, Math.min(4, cfg[key] + d));
@@ -376,7 +267,7 @@ export class TimelinePanel {
     const btn = this.playBtn;
     if (!btn) return;
     const playing = this.opts.isPlaying();
-    btn.replaceChildren(pxIcon(playing ? PAUSE_PX : PLAY_PX, 7));
+    btn.replaceChildren(icon(playing ? 'pause' : 'play'));
     btn.title = playing ? 'pause (Enter)' : 'play (Enter)';
     btn.classList.toggle('active', playing);
     btn.setAttribute('aria-pressed', String(playing));

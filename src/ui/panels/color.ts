@@ -4,6 +4,7 @@ import type { Bus } from '../../core/bus';
 import { hexToRgba, rgbaToHex } from '../../core/pixels';
 import { makeRamp } from '../../core/ramps';
 import { downloadText, openPaletteFile, paletteToGpl } from '../../io/palettes';
+import { icon, type IconName } from '../icons';
 
 export interface ColorPanelOpts {
   host: HTMLElement;
@@ -28,96 +29,18 @@ export interface ColorPanelOpts {
 
 const HEX_RE = /^#?(?:[0-9a-f]{6}|[0-9a-f]{8})$/i;
 
-const SWAP_PX = [
-  '....#..',
-  '.....#.',
-  '#######',
-  '.....#.',
-  '....#..',
-  '.......',
-  '..#....',
-  '.#.....',
-  '#######',
-  '.#.....',
-  '..#....',
-] as const;
-
-const EDIT_PX = [
-  '.....##',
-  '....###',
-  '...###.',
-  '..###..',
-  '.###...',
-  '###....',
-  '#......',
-] as const;
-
-const RAMP_PX = [
-  '....##',
-  '....##',
-  '..####',
-  '..####',
-  '######',
-  '######',
-] as const;
-
-const SAVE_PX = [
-  '...#...',
-  '...#...',
-  '.#####.',
-  '..###..',
-  '...#...',
-  '#.....#',
-  '#######',
-] as const;
-
-const LOAD_PX = [
-  '...#...',
-  '..###..',
-  '.#####.',
-  '...#...',
-  '...#...',
-  '#.....#',
-  '#######',
-] as const;
-
-const SVG_NS = 'http://www.w3.org/2000/svg';
-
-function pxIcon(rows: readonly string[], width: number): SVGSVGElement {
-  const cols = rows[0]?.length ?? 1;
-  const svg = document.createElementNS(SVG_NS, 'svg');
-  svg.setAttribute('viewBox', `0 0 ${cols} ${rows.length}`);
-  svg.setAttribute('width', String(width));
-  svg.setAttribute('height', String(Math.round((width * rows.length) / cols)));
-  svg.setAttribute('aria-hidden', 'true');
-  rows.forEach((row, y) => {
-    for (let x = 0; x < row.length; x++) {
-      if (row[x] !== '#') continue;
-      const rect = document.createElementNS(SVG_NS, 'rect');
-      rect.setAttribute('x', String(x));
-      rect.setAttribute('y', String(y));
-      rect.setAttribute('width', '1');
-      rect.setAttribute('height', '1');
-      rect.setAttribute('fill', 'currentColor');
-      rect.setAttribute('shape-rendering', 'crispEdges');
-      svg.appendChild(rect);
-    }
-  });
-  return svg;
-}
-
 function div(className: string): HTMLDivElement {
   const el = document.createElement('div');
   el.className = className;
   return el;
 }
 
-function headBtn(rows: readonly string[], title: string): HTMLButtonElement {
+function headBtn(name: IconName, title: string): HTMLButtonElement {
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'sl-head-btn';
   btn.title = title;
-  btn.appendChild(pxIcon(rows, 10));
+  btn.appendChild(icon(name));
   return btn;
 }
 
@@ -163,7 +86,7 @@ export class ColorPanel {
     swap.type = 'button';
     swap.className = 'sl-xswap';
     swap.title = 'swap colors (X)';
-    swap.appendChild(pxIcon(SWAP_PX, 10));
+    swap.appendChild(icon('swap-arrows'));
     swap.addEventListener('click', () => o.swapColors());
     chips.append(main, prev, swap);
 
@@ -192,9 +115,9 @@ export class ColorPanel {
     const palTitle = document.createElement('span');
     palTitle.textContent = 'palette';
     const palLine = div('sl-head-line');
-    const editBtn = headBtn(EDIT_PX, 'edit palette: click = replace with current, alt-click = remove');
+    const editBtn = headBtn('edit', 'edit palette: click = replace with current, alt-click = remove');
     editBtn.addEventListener('click', () => this.toggleEdit());
-    const rampBtn = headBtn(RAMP_PX, 'add a 5-step ramp from the current color');
+    const rampBtn = headBtn('ramp', 'add a 5-step ramp from the current color');
     rampBtn.addEventListener('click', () => {
       const base = o.getColor();
       if (base === 0) {
@@ -203,9 +126,9 @@ export class ColorPanel {
       }
       o.addRamp(makeRamp(base, 5));
     });
-    const saveBtn = headBtn(SAVE_PX, 'save palette (.gpl)');
+    const saveBtn = headBtn('save', 'save palette (.gpl)');
     saveBtn.addEventListener('click', () => this.savePalette());
-    const loadBtn = headBtn(LOAD_PX, 'load palette (.gpl / .json)');
+    const loadBtn = headBtn('load', 'load palette (.gpl / .json)');
     loadBtn.addEventListener('click', () => {
       openPaletteFile((name, colors) => o.setPalette(name, colors));
     });

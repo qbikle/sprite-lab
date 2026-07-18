@@ -1,6 +1,7 @@
 /** Side panel: layer stack — active row, eye, opacity, rename, reorder, merge. */
 import type { Bus } from '../../core/bus';
 import type { SpriteDoc } from '../../core/doc';
+import { icon } from '../icons';
 
 export interface LayersOpts {
   host: HTMLElement;
@@ -15,70 +16,6 @@ export interface LayersOpts {
   setOpacity(index: number, opacity: number): void;
   setVisible(index: number, visible: boolean): void;
   rename(index: number, name: string): void;
-}
-
-const EYE_PX = [
-  '...#####...',
-  '..#.....#..',
-  '.#..###..#.',
-  '#..#####..#',
-  '.#..###..#.',
-  '..#.....#..',
-  '...#####...',
-] as const;
-
-const UP_PX = [
-  '...#...',
-  '..###..',
-  '.#####.',
-  '#######',
-] as const;
-
-const TRASH_PX = [
-  '..####..',
-  '########',
-  '.#....#.',
-  '.#.##.#.',
-  '.#.##.#.',
-  '.#.##.#.',
-  '.#....#.',
-  '..####..',
-] as const;
-
-const MERGE_PX = [
-  '...##...',
-  '...##...',
-  '.######.',
-  '..####..',
-  '...##...',
-  '........',
-  '########',
-  '########',
-] as const;
-
-const SVG_NS = 'http://www.w3.org/2000/svg';
-
-function pxIcon(rows: readonly string[], width: number): SVGSVGElement {
-  const cols = rows[0]?.length ?? 1;
-  const svg = document.createElementNS(SVG_NS, 'svg');
-  svg.setAttribute('viewBox', `0 0 ${cols} ${rows.length}`);
-  svg.setAttribute('width', String(width));
-  svg.setAttribute('height', String(Math.round((width * rows.length) / cols)));
-  svg.setAttribute('aria-hidden', 'true');
-  rows.forEach((row, y) => {
-    for (let x = 0; x < row.length; x++) {
-      if (row[x] !== '#') continue;
-      const rect = document.createElementNS(SVG_NS, 'rect');
-      rect.setAttribute('x', String(x));
-      rect.setAttribute('y', String(y));
-      rect.setAttribute('width', '1');
-      rect.setAttribute('height', '1');
-      rect.setAttribute('fill', 'currentColor');
-      rect.setAttribute('shape-rendering', 'crispEdges');
-      svg.appendChild(rect);
-    }
-  });
-  return svg;
 }
 
 function div(className: string): HTMLDivElement {
@@ -123,15 +60,15 @@ export class LayersPanel {
       return btn;
     };
     const add = headBtn('new layer', () => o.addLayer());
-    add.textContent = '+';
+    add.appendChild(icon('plus'));
     const del = headBtn('delete layer', () => o.removeLayer());
-    del.appendChild(pxIcon(TRASH_PX, 12));
+    del.appendChild(icon('trash'));
     const up = headBtn('move layer up (PgUp)', () => o.moveLayer(1));
-    up.appendChild(pxIcon(UP_PX, 12));
+    up.appendChild(icon('layer-up'));
     const down = headBtn('move layer down (PgDn)', () => o.moveLayer(-1));
-    down.appendChild(pxIcon([...UP_PX].reverse(), 12));
+    down.appendChild(icon('layer-down'));
     const merge = headBtn('merge down', () => o.mergeDown());
-    merge.appendChild(pxIcon(MERGE_PX, 12));
+    merge.appendChild(icon('merge'));
     this.delBtn = del;
     this.upBtn = up;
     this.downBtn = down;
@@ -225,7 +162,7 @@ export class LayersPanel {
     eye.className = 'sl-layer-eye';
     eye.title = visible ? 'hide layer' : 'show layer';
     eye.setAttribute('aria-pressed', String(visible));
-    eye.appendChild(pxIcon(EYE_PX, 13));
+    eye.appendChild(icon(visible ? 'eye' : 'eye-off'));
     eye.addEventListener('click', (e) => {
       e.stopPropagation();
       o.setVisible(docIndex, !visible);

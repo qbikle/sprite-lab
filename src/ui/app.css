@@ -144,8 +144,9 @@ textarea,
 
 /* ── controls ───────────────────────────────────────────── */
 
-.sl-shell button,
-.sl-cheatsheet button {
+/* :where() keeps the base skin at zero-class specificity — single-class
+ * component rules (.sl-mode-btn etc.) override padding/color cleanly. */
+:where(.sl-shell, .sl-cheatsheet) button {
   font: inherit;
   color: var(--text);
   background: var(--panel-2);
@@ -153,6 +154,15 @@ textarea,
   border-radius: var(--radius);
   padding: 2px 8px;
   cursor: pointer;
+}
+
+/* icon buttons: svg never flex-squeezes to 0, sits on no baseline, eats no clicks */
+.sl-shell button svg,
+.sl-cheatsheet button svg,
+.sl-importer button svg {
+  display: block;
+  flex: none;
+  pointer-events: none;
 }
 
 .sl-shell button:hover:not(:disabled),
@@ -235,6 +245,9 @@ textarea,
 }
 
 .sl-tool-glyph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font-size: 16px;
   font-weight: 700;
   line-height: 1;
@@ -312,8 +325,9 @@ textarea,
   justify-content: center;
 }
 
-.sl-mini-btn svg {
-  flex: none;
+.sl-layers-head .sl-mini-btn {
+  width: 20px;
+  height: 20px;
 }
 
 /* ── mode tiles (symmetry / dither) ─────────────────────── */
@@ -334,6 +348,10 @@ textarea,
   justify-content: center;
   flex: none;
   color: var(--dim);
+}
+
+.sl-shell .sl-mode-btn:hover:not(:disabled):not(.active) {
+  color: var(--text);
 }
 
 .sl-mode-btn.active {
@@ -454,10 +472,6 @@ textarea,
   justify-content: center;
 }
 
-.sl-xswap svg {
-  flex: none;
-}
-
 .sl-hex {
   width: 100%;
   font-variant-numeric: tabular-nums;
@@ -536,14 +550,18 @@ textarea,
   content: none;
 }
 
+.sl-panel-head.sl-head-row {
+  gap: var(--sp-1);
+}
+
 .sl-head-line {
   flex: 1;
   border-top: 1px solid var(--panel-2);
 }
 
 .sl-shell .sl-head-btn {
-  width: 16px;
-  height: 16px;
+  width: 20px;
+  height: 20px;
   padding: 0;
   border-width: 1px;
   display: flex;
@@ -551,10 +569,6 @@ textarea,
   justify-content: center;
   flex: none;
   color: var(--dim);
-}
-
-.sl-head-btn svg {
-  flex: none;
 }
 
 .sl-shell .sl-head-btn:hover:not(:disabled) {
@@ -586,13 +600,17 @@ textarea,
 }
 
 .sl-swap-caret {
-  width: 8px;
+  width: 16px;
+  height: 16px;
   display: flex;
   align-items: center;
+  justify-content: center;
   flex: none;
+  color: var(--dim);
 }
 
 .sl-swap-caret svg {
+  display: block;
   flex: none;
 }
 
@@ -648,6 +666,7 @@ textarea,
 }
 
 .sl-swap-arrow svg {
+  display: block;
   flex: none;
 }
 
@@ -783,17 +802,17 @@ textarea,
 
 .sl-tl-transport {
   flex: none;
-  height: 26px;
+  height: 28px;
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: var(--sp-1);
   padding: 0 var(--sp-2);
   border-bottom: 1px solid var(--panel-2);
 }
 
 .sl-shell .sl-tl-btn {
-  width: 24px;
-  height: 20px;
+  width: 26px;
+  height: 22px;
   padding: 0;
   display: flex;
   align-items: center;
@@ -818,9 +837,9 @@ textarea,
 
 .sl-tl-sep {
   width: 0;
-  height: 14px;
+  height: 16px;
   border-left: 1px solid var(--panel-2);
-  margin: 0 3px;
+  margin: 0;
   flex: none;
 }
 
@@ -846,18 +865,21 @@ textarea,
 .sl-tl-step {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
 }
 
+/* 16x12 each: the centered 16px svg overhangs 2px top/bottom — clip it so the
+ * stacked pair never overlaps (chevron ink itself sits well inside). */
 .sl-shell .sl-tl-stepbtn {
-  width: 14px;
-  height: 9px;
+  width: 16px;
+  height: 12px;
   padding: 0;
   border-width: 1px;
   display: flex;
   align-items: center;
   justify-content: center;
   flex: none;
+  overflow: hidden;
 }
 
 .sl-shell input.sl-tl-alpha {
@@ -1066,7 +1088,7 @@ textarea,
 .sl-layers-head {
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: var(--sp-1);
   font-size: var(--fs-small);
   color: var(--dim);
   letter-spacing: 0.12em;
@@ -1330,7 +1352,11 @@ textarea,
 .sl-shell .sl-menu-item:focus-visible {
   background: var(--panel-2);
   filter: none;
-  outline: none;
+}
+
+.sl-shell .sl-menu-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 .sl-shell .sl-menu-item:active:not(:disabled) {

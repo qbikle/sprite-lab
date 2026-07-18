@@ -3,6 +3,7 @@ import type { Rgba } from '../../core/contracts';
 import type { Bus } from '../../core/bus';
 import type { SwapPair } from '../../core/commands/palette-swap';
 import { rgbaToHex } from '../../core/pixels';
+import { icon } from '../icons';
 
 export interface SwapPanelOpts {
   host: HTMLElement;
@@ -16,65 +17,6 @@ export interface SwapPanelOpts {
 
 const MAX_ROWS = 12;
 const LONG_PRESS_MS = 500;
-
-const CARET_RIGHT_PX = [
-  '#....',
-  '###..',
-  '#####',
-  '###..',
-  '#....',
-] as const;
-
-const CARET_DOWN_PX = [
-  '.....',
-  '#####',
-  '.###.',
-  '..#..',
-  '.....',
-] as const;
-
-const ARROW_PX = [
-  '....#..',
-  '.....#.',
-  '#######',
-  '.....#.',
-  '....#..',
-] as const;
-
-const RESCAN_PX = [
-  '..###.#',
-  '.#...##',
-  '#...###',
-  '#......',
-  '#......',
-  '.#...#.',
-  '..###..',
-] as const;
-
-const SVG_NS = 'http://www.w3.org/2000/svg';
-
-function pxIcon(rows: readonly string[], width: number): SVGSVGElement {
-  const cols = rows[0]?.length ?? 1;
-  const svg = document.createElementNS(SVG_NS, 'svg');
-  svg.setAttribute('viewBox', `0 0 ${cols} ${rows.length}`);
-  svg.setAttribute('width', String(width));
-  svg.setAttribute('height', String(Math.round((width * rows.length) / cols)));
-  svg.setAttribute('aria-hidden', 'true');
-  rows.forEach((row, y) => {
-    for (let x = 0; x < row.length; x++) {
-      if (row[x] !== '#') continue;
-      const rect = document.createElementNS(SVG_NS, 'rect');
-      rect.setAttribute('x', String(x));
-      rect.setAttribute('y', String(y));
-      rect.setAttribute('width', '1');
-      rect.setAttribute('height', '1');
-      rect.setAttribute('fill', 'currentColor');
-      rect.setAttribute('shape-rendering', 'crispEdges');
-      svg.appendChild(rect);
-    }
-  });
-  return svg;
-}
 
 function div(className: string): HTMLDivElement {
   const el = document.createElement('div');
@@ -117,7 +59,7 @@ export class SwapPanel {
     rescan.type = 'button';
     rescan.className = 'sl-head-btn';
     rescan.title = 'rescan used colors';
-    rescan.appendChild(pxIcon(RESCAN_PX, 10));
+    rescan.appendChild(icon('rescan'));
     rescan.addEventListener('click', (e) => {
       e.stopPropagation();
       this.rescan();
@@ -188,9 +130,7 @@ export class SwapPanel {
 
   private syncExpanded(): void {
     if (this.caretEl) {
-      this.caretEl.replaceChildren(
-        pxIcon(this.expanded ? CARET_DOWN_PX : CARET_RIGHT_PX, 7),
-      );
+      this.caretEl.replaceChildren(icon(this.expanded ? 'caret-down' : 'caret-right'));
     }
     if (this.rescanBtn) this.rescanBtn.hidden = !this.expanded;
     if (this.bodyEl) this.bodyEl.hidden = !this.expanded;
@@ -232,7 +172,7 @@ export class SwapPanel {
 
     const arrow = document.createElement('span');
     arrow.className = 'sl-swap-arrow';
-    arrow.appendChild(pxIcon(ARROW_PX, 12));
+    arrow.appendChild(icon('arrow-right'));
 
     row.append(src, arrow, this.targetChip(from, to));
     return row;

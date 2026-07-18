@@ -2,6 +2,7 @@
 import type { DitherMode, SymmetryMode, ToolId } from '../../core/contracts';
 import type { Bus } from '../../core/bus';
 import type { Tool } from '../../tools/tool';
+import { icon, type IconName } from '../icons';
 
 export interface ToolbarOpts {
   host: HTMLElement;
@@ -25,248 +26,21 @@ const IS_MAC = /mac|iphone|ipad|ipod/i.test(
 );
 const MOD = IS_MAC ? 'cmd' : 'ctrl';
 
-const UNDO_PX = [
-  '..#......',
-  '.##......',
-  '#########',
-  '.##.....#',
-  '..#.....#',
-  '........#',
-  '.....####',
-] as const;
-
-/* 12×12 px-map tool icons, keyed by ToolId (fallback: label monogram). */
-const TOOL_PX: Partial<Record<ToolId, readonly string[]>> = {
-  pencil: [
-    '........##..',
-    '.......#..#.',
-    '......#..##.',
-    '.....#..#.#.',
-    '....#..#.##.',
-    '...#..#..#..',
-    '..#..#..#...',
-    '.#..#..#....',
-    '.#.#..#.....',
-    '.##..#......',
-    '.####.......',
-    '............',
-  ],
-  eraser: [
-    '............',
-    '.....######.',
-    '....#....##.',
-    '...#....#.#.',
-    '..#....#..#.',
-    '.#....#..##.',
-    '.#...#..##..',
-    '.#..#..##...',
-    '.#.#..##....',
-    '.####.##....',
-    '............',
-    '............',
-  ],
-  eyedropper: [
-    '.......###..',
-    '......#####.',
-    '.......###..',
-    '......#.##..',
-    '.....#..#...',
-    '....#..#....',
-    '...#..#.....',
-    '..#..#......',
-    '.##.#.......',
-    '.#.#........',
-    '..#.........',
-    '............',
-  ],
-  fill: [
-    '....#.......',
-    '...###......',
-    '..##.##.....',
-    '.##...##....',
-    '##..#..##...',
-    '.##..#..##..',
-    '..##..#.###.',
-    '...##..##.#.',
-    '....####..#.',
-    '.......#.#..',
-    '........#...',
-    '............',
-  ],
-  line: [
-    '..........##',
-    '.........##.',
-    '........##..',
-    '.......##...',
-    '......##....',
-    '.....##.....',
-    '....##......',
-    '...##.......',
-    '..##........',
-    '.##.........',
-    '##..........',
-    '............',
-  ],
-  rect: [
-    '............',
-    '.##########.',
-    '.#........#.',
-    '.#........#.',
-    '.#........#.',
-    '.#........#.',
-    '.#........#.',
-    '.#........#.',
-    '.#........#.',
-    '.#........#.',
-    '.##########.',
-    '............',
-  ],
-  ellipse: [
-    '............',
-    '....####....',
-    '..##....##..',
-    '.#........#.',
-    '.#........#.',
-    '#..........#',
-    '#..........#',
-    '.#........#.',
-    '.#........#.',
-    '..##....##..',
-    '....####....',
-    '............',
-  ],
-  'select-rect': [
-    '............',
-    '.##..##..##.',
-    '.#........#.',
-    '............',
-    '.#........#.',
-    '.#........#.',
-    '............',
-    '.#........#.',
-    '.#........#.',
-    '............',
-    '.##..##..##.',
-    '............',
-  ],
-  lasso: [
-    '............',
-    '...######...',
-    '..#......#..',
-    '.#........#.',
-    '.#........#.',
-    '.#........#.',
-    '..#......#..',
-    '...##..##...',
-    '.....##.....',
-    '....#.......',
-    '...#........',
-    '............',
-  ],
-  move: [
-    '.....##.....',
-    '....####....',
-    '.....##.....',
-    '..#..##..#..',
-    '.##..##..##.',
-    '############',
-    '############',
-    '.##..##..##.',
-    '..#..##..#..',
-    '.....##.....',
-    '....####....',
-    '.....##.....',
-  ],
+const SYM_ICON: Record<SymmetryMode, IconName> = {
+  off: 'sym-off',
+  x: 'sym-x',
+  y: 'sym-y',
+  quad: 'sym-quad',
 };
 
-/* 9×9 mirror-axis glyphs per symmetry mode ('off' renders empty). */
-const SYM_PX: Partial<Record<SymmetryMode, readonly string[]>> = {
-  x: [
-    '....#....',
-    '....#....',
-    '....#....',
-    '....#....',
-    '....#....',
-    '....#....',
-    '....#....',
-    '....#....',
-    '....#....',
-  ],
-  y: [
-    '.........',
-    '.........',
-    '.........',
-    '.........',
-    '#########',
-    '.........',
-    '.........',
-    '.........',
-    '.........',
-  ],
-  quad: [
-    '....#....',
-    '....#....',
-    '....#....',
-    '....#....',
-    '#########',
-    '....#....',
-    '....#....',
-    '....#....',
-    '....#....',
-  ],
+const DITHER_ICON: Record<DitherMode, IconName> = {
+  off: 'dither-off',
+  bayer2: 'dither-2x',
+  bayer4: 'dither-4x',
 };
 
-/* 8×8 checker glyphs per dither mode ('off' renders empty). */
-const DITHER_PX: Partial<Record<DitherMode, readonly string[]>> = {
-  bayer2: [
-    '####....',
-    '####....',
-    '####....',
-    '####....',
-    '....####',
-    '....####',
-    '....####',
-    '....####',
-  ],
-  bayer4: [
-    '##..##..',
-    '##..##..',
-    '..##..##',
-    '..##..##',
-    '##..##..',
-    '##..##..',
-    '..##..##',
-    '..##..##',
-  ],
-};
-
-const SVG_NS = 'http://www.w3.org/2000/svg';
-
-function pxIcon(rows: readonly string[], width: number): SVGSVGElement {
-  const cols = rows[0]?.length ?? 1;
-  const svg = document.createElementNS(SVG_NS, 'svg');
-  svg.setAttribute('viewBox', `0 0 ${cols} ${rows.length}`);
-  svg.setAttribute('width', String(width));
-  svg.setAttribute('height', String(Math.round((width * rows.length) / cols)));
-  svg.setAttribute('aria-hidden', 'true');
-  rows.forEach((row, y) => {
-    for (let x = 0; x < row.length; x++) {
-      if (row[x] !== '#') continue;
-      const rect = document.createElementNS(SVG_NS, 'rect');
-      rect.setAttribute('x', String(x));
-      rect.setAttribute('y', String(y));
-      rect.setAttribute('width', '1');
-      rect.setAttribute('height', '1');
-      rect.setAttribute('fill', 'currentColor');
-      rect.setAttribute('shape-rendering', 'crispEdges');
-      svg.appendChild(rect);
-    }
-  });
-  return svg;
-}
-
-function mirrored(rows: readonly string[]): string[] {
-  return rows.map((row) => [...row].reverse().join(''));
+function modeIcon(name: IconName): SVGSVGElement {
+  return icon(name);
 }
 
 function div(className: string): HTMLDivElement {
@@ -312,9 +86,7 @@ export class ToolbarPanel {
       btn.title = `${tool.label} (${tool.hotkey.toUpperCase()})`;
       const glyph = document.createElement('span');
       glyph.className = 'sl-tool-glyph';
-      const px = TOOL_PX[tool.id];
-      if (px) glyph.appendChild(pxIcon(px, 22));
-      else glyph.textContent = (tool.label.charAt(0) || '?').toUpperCase();
+      glyph.appendChild(icon(tool.id));
       const key = document.createElement('span');
       key.className = 'sl-tool-key';
       key.textContent = tool.hotkey.toLowerCase();
@@ -360,14 +132,14 @@ export class ToolbarPanel {
     undo.className = 'sl-hist-btn';
     undo.title = `undo (${MOD}+z)`;
     undo.disabled = true;
-    undo.appendChild(pxIcon(UNDO_PX, 18));
+    undo.appendChild(icon('undo'));
     undo.addEventListener('click', () => o.onUndo());
     const redo = document.createElement('button');
     redo.type = 'button';
     redo.className = 'sl-hist-btn';
     redo.title = `redo (${MOD}+shift+z)`;
     redo.disabled = true;
-    redo.appendChild(pxIcon(mirrored(UNDO_PX), 18));
+    redo.appendChild(icon('redo'));
     redo.addEventListener('click', () => o.onRedo());
     hist.append(undo, redo);
     this.undoBtn = undo;
@@ -416,12 +188,8 @@ export class ToolbarPanel {
       sym.classList.toggle('active', mode !== 'off');
       sym.setAttribute('aria-pressed', String(mode !== 'off'));
       sym.title = `symmetry: ${mode} (S)`;
-      sym.replaceChildren();
-      // off state still shows the quad glyph, dimmed — an empty tile reads as broken
-      const px = SYM_PX[mode] ?? SYM_PX['quad'];
-      const icon = pxIcon(px ?? [], 14);
-      if (mode === 'off') icon.style.opacity = '0.3';
-      sym.appendChild(icon);
+      // off state still renders its glyph — an empty tile reads as broken
+      sym.replaceChildren(modeIcon(SYM_ICON[mode]));
     }
     const dither = this.ditherBtn;
     if (dither) {
@@ -430,11 +198,7 @@ export class ToolbarPanel {
       dither.setAttribute('aria-pressed', String(mode !== 'off'));
       dither.title =
         `dither: ${mode === 'bayer2' ? '2×2' : mode === 'bayer4' ? '4×4' : 'off'} (D)`;
-      dither.replaceChildren();
-      const px = DITHER_PX[mode] ?? DITHER_PX['bayer4'];
-      const icon = pxIcon(px ?? [], 14);
-      if (mode === 'off') icon.style.opacity = '0.3';
-      dither.appendChild(icon);
+      dither.replaceChildren(modeIcon(DITHER_ICON[mode]));
     }
   }
 
