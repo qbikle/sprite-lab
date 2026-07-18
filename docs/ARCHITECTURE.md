@@ -192,3 +192,8 @@ never touch the doc, the canvas, or the DOM directly.
   change under them — pinned by compositor tests).
 - ARCHITECTURE's old "structural ops = transactions" line is a known deviation: History
   has no composite-command support; MergeLayerDown et al are monolithic commands instead.
+- Wave 8 additions: `PointerInfo.brushOverride?` (pen-pressure effective footprint —
+  viewport-set, StrokeTool consumes, fallback ctx.brushSize); Viewport `penPressure`
+  accessor backed by `data-pen-pressure` on the container; PWA shell in public/
+  (manifest + hand-rolled sw.js, PROD-only registration in main.ts); first-run demo
+  doc `src/assets/demo.sprite.json` (?raw import, cookie+localStorage seen-marker).

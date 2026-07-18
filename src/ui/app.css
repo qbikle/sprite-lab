@@ -1604,3 +1604,23 @@ textarea,
   color: var(--dim);
   font-weight: 400;
 }
+
+/* ── wave 8: touch & pencil ─────────────────────────────── */
+
+/* the canvas region owns every gesture — the browser gets none
+   (no scroll, no pinch-zoom, no iOS long-press callout) */
+.sl-canvas {
+  touch-action: none;
+  overscroll-behavior: contain;
+  -webkit-touch-callout: none;
+}
+
+/* taps stay taps: no iOS double-tap zoom on app chrome */
+:where(.sl-shell, .sl-cheatsheet, .sl-importer) button {
+  touch-action: manipulation;
+}
+
+/* the timeline strip keeps native horizontal touch scrolling */
+.sl-tl-scroll {
+  touch-action: pan-x;
+}

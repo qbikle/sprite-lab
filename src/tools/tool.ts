@@ -34,21 +34,18 @@ export abstract class StrokeTool extends Tool {
   protected abstract strokeColor(ctx: ToolCtx): Rgba;
 
   override onDown(ctx: ToolCtx, p: PixelPt, e: PointerInfo): void {
-    void e;
     this.down = true;
-    this.stampTo(ctx, p);
+    this.stampTo(ctx, p, e);
   }
 
   override onMove(ctx: ToolCtx, p: PixelPt, e: PointerInfo): void {
-    void e;
     if (!this.down) return;
-    this.stampTo(ctx, p);
+    this.stampTo(ctx, p, e);
   }
 
   override onUp(ctx: ToolCtx, p: PixelPt, e: PointerInfo): void {
-    void e;
     if (!this.down) return;
-    this.stampTo(ctx, p);
+    this.stampTo(ctx, p, e);
     ctx.commitStage(this.commitLabel);
     this.reset();
   }
@@ -59,9 +56,9 @@ export abstract class StrokeTool extends Tool {
     this.reset();
   }
 
-  private stampTo(ctx: ToolCtx, p: PixelPt): void {
+  private stampTo(ctx: ToolCtx, p: PixelPt, e: PointerInfo): void {
     const color = this.strokeColor(ctx);
-    stampLine(this.last, p, ctx.brushSize, (q) => ctx.stage(q, color));
+    stampLine(this.last, p, e.brushOverride ?? ctx.brushSize, (q) => ctx.stage(q, color));
     this.last = p;
   }
 

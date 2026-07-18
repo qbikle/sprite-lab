@@ -40,3 +40,10 @@ if (import.meta.env.DEV && new URLSearchParams(location.search).has('gallery')) 
 } else {
   new App(root).mount();
 }
+
+/** PWA offline: PROD-only so dev/HMR stays SW-free. Failure is non-fatal. */
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  });
+}

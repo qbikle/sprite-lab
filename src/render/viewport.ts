@@ -14,6 +14,12 @@ import { invalidateThemeColors } from './theme';
 const WHEEL_LINE_PX = 16;
 const WHEEL_STEP_PX = 100;
 
+/** Pen pressure 0..1 → effective brush footprint 1..size (ceil). */
+export function pressureBrushSize(pressure: number, size: number): number {
+  if (!(pressure > 0)) return 1;
+  return Math.min(size, Math.max(1, Math.ceil(Math.min(1, pressure) * size)));
+}
+
 export interface ViewportOpts {
   container: HTMLElement;
   bus: Bus;
@@ -61,6 +67,7 @@ export class Viewport {
   private readonly touches = new Map<number, { x: number; y: number }>();
   private pinching = false;
   private pinchLast: { dist: number; midX: number; midY: number } | null = null;
+  private penActive = false;
 
   private checker: CanvasPattern | null = null;
   private cssW = 0;
@@ -95,7 +102,7 @@ export class Viewport {
     this.listen(canvas, 'pointermove', (e) => this.onMove(e));
     this.listen(canvas, 'pointerup', (e) => this.onUp(e, false));
     this.listen(canvas, 'pointercancel', (e) => this.onUp(e, true));
-    this.listen(canvas, 'lostpointercapture', (e) => this.onUp(e, true));
+    this.listen(canvas, 'lostpointercapture', (e) => this.onLostCapture(e));
     this.listen(canvas, 'pointerleave', () => {
       if (this.hover === null) return;
       this.hover = null;
@@ -106,6 +113,14 @@ export class Viewport {
     this.listen(canvas, 'contextmenu', (e) => e.preventDefault());
     this.listenWin('keydown', (e) => this.onKey(e, true));
     this.listenWin('keyup', (e) => this.onKey(e, false));
+    // pen ups can land outside the canvas (no capture when the draw never
+    // started) — clear palm rejection at window level so touch never sticks off
+    this.listenWin('pointerup', (e) => {
+      if (e.pointerType === 'pen') this.penActive = false;
+    });
+    this.listenWin('pointercancel', (e) => {
+      if (e.pointerType === 'pen') this.penActive = false;
+    });
     // cmd+tab away mid-pan: no keyup ever arrives, so drop the held space
     this.listenWin('blur', () => {
       if (!this.spaceHeld) return;
@@ -157,9 +172,22 @@ export class Viewport {
     this.touches.clear();
     this.pinching = false;
     this.pinchLast = null;
+    this.penActive = false;
     this.canvas?.remove();
     this.canvas = null;
     this.g = null;
+  }
+
+  /** Wave 8: pen pressure → brush size mode. Default OFF. Single source of
+   *  truth is `data-pen-pressure` on the viewport container, so the app can
+   *  wire either this property or the attribute. Pen pointers only. */
+  get penPressure(): boolean {
+    return this.container.dataset['penPressure'] === 'on';
+  }
+
+  set penPressure(on: boolean) {
+    if (on) this.container.dataset['penPressure'] = 'on';
+    else delete this.container.dataset['penPressure'];
   }
 
   /** Mark dirty; coalesced into one rAF redraw. Subscribed to doc:changed + camera:changed. */
@@ -343,13 +371,17 @@ export class Viewport {
   private onDown(e: PointerEvent): void {
     const canvas = this.canvas;
     if (!canvas) return;
+    if (e.pointerType === 'pen') this.beginPen();
     if (e.pointerType === 'touch') {
+      if (this.penActive) return;
       this.touches.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
       if (this.touches.size === 2) {
         this.cancelDraw();
         this.pinching = true;
         this.pinchLast = null;
-        canvas.setPointerCapture(e.pointerId);
+        // capture BOTH fingers: cancelDraw released finger 1, and an
+        // uncaptured finger drifting off-canvas would starve the pinch
+        for (const id of this.touches.keys()) this.capture(canvas, id);
         this.stepPinch();
         return;
       }
@@ -378,6 +410,7 @@ export class Viewport {
   }
 
   private onMove(e: PointerEvent): void {
+    if (e.pointerType === 'touch' && this.penActive) return;
     const prev = this.hover;
     this.hover = this.camera.pixelAt(e.offsetX, e.offsetY, this.docW, this.docH);
     this.bus.emit('cursor:moved', { p: this.hover });
@@ -408,10 +441,13 @@ export class Viewport {
 
   private onUp(e: PointerEvent, cancel: boolean): void {
     if (e.pointerType === 'touch') {
+      if (this.penActive) return;
       this.touches.delete(e.pointerId);
-      if (this.pinching && this.touches.size < 2) {
-        this.pinching = false;
+      if (this.pinching) {
+        // reseed on any lift: with 3 fingers down the surviving pair differs
+        // from the pair pinchLast was measured on — never jump the zoom
         this.pinchLast = null;
+        if (this.touches.size < 2) this.pinching = false;
       }
     }
     if (this.panning && e.pointerId === this.panId) {
@@ -485,6 +521,35 @@ export class Viewport {
     this.pinchLast = { dist, midX, midY };
   }
 
+  /** Palm rejection: a pen in contact owns the canvas — any live touch
+   *  gesture drops (a touch draw cancels, a pinch dissolves) and touch
+   *  pointers are ignored until the pen lifts (window pointerup clears). */
+  private beginPen(): void {
+    this.penActive = true;
+    if (this.drawing && this.touches.has(this.drawId)) this.cancelDraw();
+    this.touches.clear();
+    this.pinching = false;
+    this.pinchLast = null;
+  }
+
+  /** Capture can vanish without a pointerup (explicit release during the
+   *  pinch handoff, DOM surgery). Drop draw/pan state for that pointer but
+   *  leave the touches map alone — the finger may still be on the glass;
+   *  pointerup/pointercancel own the map. */
+  private onLostCapture(e: PointerEvent): void {
+    if (this.drawing && e.pointerId === this.drawId) {
+      this.drawing = false;
+      this.drawId = -1;
+      this.delegate.onPointer('cancel', this.lastDrawPt, this.info(e));
+      this.requestRender();
+    }
+    if (this.panning && e.pointerId === this.panId) {
+      this.panning = false;
+      this.panId = -1;
+      if (this.canvas) this.canvas.style.cursor = this.spaceHeld ? 'grab' : '';
+    }
+  }
+
   private cancelDraw(): void {
     if (!this.drawing) return;
     const id = this.drawId;
@@ -509,15 +574,29 @@ export class Viewport {
   }
 
   private info(e: PointerEvent): PointerInfo {
-    return {
+    const pointerType: PointerInfo['pointerType'] =
+      e.pointerType === 'pen' ? 'pen' : e.pointerType === 'touch' ? 'touch' : 'mouse';
+    const info: PointerInfo = {
       buttons: e.buttons,
       shift: e.shiftKey,
       alt: e.altKey,
       ctrl: e.ctrlKey,
       meta: e.metaKey,
       pressure: e.pressure,
-      pointerType: e.pointerType === 'pen' ? 'pen' : e.pointerType === 'touch' ? 'touch' : 'mouse',
+      pointerType,
     };
+    if (pointerType === 'pen' && this.penPressure) {
+      info.brushOverride = pressureBrushSize(e.pressure, this.delegate.brushSize);
+    }
+    return info;
+  }
+
+  private capture(canvas: HTMLCanvasElement, id: number): void {
+    try {
+      canvas.setPointerCapture(id);
+    } catch {
+      /* pointer already gone */
+    }
   }
 
   private release(id: number): void {

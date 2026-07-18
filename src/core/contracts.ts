@@ -97,6 +97,10 @@ export interface PointerInfo {
   meta: boolean;
   pressure: number;
   pointerType: 'mouse' | 'pen' | 'touch';
+  /** Wave 8 (additive): pen-pressure effective brush footprint (1..brushSize),
+   *  set by the viewport only while its pen-pressure mode is on and the
+   *  pointer is a pen. Absent → consumers use ctx.brushSize. */
+  brushOverride?: number;
 }
 
 /**

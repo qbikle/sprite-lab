@@ -2,7 +2,8 @@
 import type { Command, Tag } from '../core/contracts';
 import { Bus } from '../core/bus';
 import { History } from '../core/history';
-import { SpriteDoc } from '../core/doc';
+import { SpriteDoc, type DocJson } from '../core/doc';
+import demoRaw from '../assets/demo.sprite.json?raw';
 import { AddPaletteColor } from '../core/commands/palette-ops';
 import { RemovePaletteColor, ReplacePaletteColor, SetPalette } from '../core/commands/palette-edit';
 import { SwapColors, usedColors } from '../core/commands/palette-swap';
@@ -50,6 +51,42 @@ import { EditorState } from './editor';
 import { Player } from './player';
 
 const THEME_KEY = 'sprite-lab:v2:theme';
+const DEMO_SEEN_KEY = 'sprite-lab:v2:demo-seen';
+const DEMO_SEEN_COOKIE = 'sprite-lab-demo-seen';
+
+/** The bundled first-run sprite (the mochi cat). null if the asset is corrupt. */
+function demoDoc(): SpriteDoc | null {
+  try {
+    return SpriteDoc.fromJSON(JSON.parse(demoRaw) as DocJson);
+  } catch {
+    return null;
+  }
+}
+
+/** First-run = the demo has never been shown on this origin. The marker lives
+ *  in BOTH localStorage and a cookie so clearing one store alone doesn't
+ *  resurrect the demo over a deliberately blank doc. */
+function demoSeen(): boolean {
+  try {
+    if (localStorage.getItem(DEMO_SEEN_KEY) !== null) return true;
+  } catch {
+    /* storage unavailable */
+  }
+  return document.cookie.includes(`${DEMO_SEEN_COOKIE}=1`);
+}
+
+function markDemoSeen(): void {
+  try {
+    localStorage.setItem(DEMO_SEEN_KEY, '1');
+  } catch {
+    /* storage unavailable */
+  }
+  try {
+    document.cookie = `${DEMO_SEEN_COOKIE}=1; max-age=63072000; path=/; SameSite=Lax`;
+  } catch {
+    /* cookies unavailable */
+  }
+}
 
 export class App {
   private readonly root: HTMLElement;
@@ -73,10 +110,17 @@ export class App {
    * → shortcuts → autosave.start() → topbar actions (new/open/export/theme).
    */
   private async start(): Promise<void> {
+    // First run (no autosave, demo never shown): boot into the demo sprite so
+    // the app never opens cold-empty. The marker is written before the first
+    // await so a reload mid-boot can never observe a half-marked first run.
+    const firstRun = !demoSeen();
+    if (firstRun) markDemoSeen();
     const restored = await Autosave.restoreAsync();
     if (!this.mounted) return;
 
-    const doc = restored ?? SpriteDoc.blank(32, 32, 'untitled');
+    const doc = restored
+      ?? (firstRun ? demoDoc() : null)
+      ?? SpriteDoc.blank(32, 32, 'untitled');
     const bus = new Bus();
     const history = new History(doc, bus);
     const tools = [
@@ -485,6 +529,15 @@ export class App {
         run: () => downloadBlob(docToSpriteFile(editor.doc), spriteFileName(editor.doc)),
       },
       { label: 'open .sprite', run: () => openSpritePicker(adopt, status) },
+      {
+        label: 'open demo',
+        cls: 'sl-act-demo',
+        run: () => {
+          const demo = demoDoc();
+          if (demo) adopt(demo);
+          else status('demo sprite unavailable');
+        },
+      },
     ]);
     addAction('sl-act-theme', 'theme', toggleTheme);
 
@@ -593,6 +646,15 @@ export class App {
       run: () => editor.setOnion({ ...editor.onion, enabled: !editor.onion.enabled }),
     });
     shortcuts.register({
+      keys: 'p', desc: 'toggle pen pressure', group: 'tools',
+      run: () => {
+        viewport.penPressure = !viewport.penPressure;
+        bus.emit('status:message', {
+          text: viewport.penPressure ? 'pen pressure on' : 'pen pressure off',
+        });
+      },
+    });
+    shortcuts.register({
       keys: 'pageup', desc: 'layer up', group: 'anim',
       run: () => editor.setActiveLayer(editor.activeLayer + 1),
     });
@@ -614,7 +676,7 @@ export class App {
    *  ArrowUp/ArrowDown walk the items. sl-act-export stays a direct png button. */
   private mountExportMenu(
     host: HTMLElement,
-    items: ReadonlyArray<{ label: string; run: () => void }>,
+    items: ReadonlyArray<{ label: string; cls?: string; run: () => void }>,
   ): void {
     const wrap = document.createElement('div');
     wrap.className = 'sl-menu-anchor';
@@ -641,10 +703,10 @@ export class App {
       buttons[0]?.focus();
     };
 
-    for (const { label, run } of items) {
+    for (const { label, cls, run } of items) {
       const item = document.createElement('button');
       item.type = 'button';
-      item.className = 'sl-menu-item';
+      item.className = cls ? `sl-menu-item ${cls}` : 'sl-menu-item';
       item.setAttribute('role', 'menuitem');
       item.textContent = label;
       item.addEventListener('click', () => {

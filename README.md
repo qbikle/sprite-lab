@@ -19,21 +19,25 @@ npm run test       # vitest unit suite (core model)
 npm run e2e        # playwright end-to-end (side port 5199)
 ```
 
-## Today (Waves 1–5)
+## Today (Waves 1–8)
 
 - Crisp, dpr-aware canvas — smooth pan/zoom, zoom stops 25%–6400%, dark + light themes, keyboard-first (`?`)
-- Tools: pencil / eraser / eyedropper / fill, line / rect / ellipse with live preview, Bayer dither brushes, x/y/quad mirror, tiling preview
+- Tools: pencil / eraser / eyedropper / fill (selection-aware, symmetry-seeded), line / rect / ellipse with live preview, Bayer dither brushes, x/y/quad mirror, tiling preview
 - Selection: rect marquee + lasso, move-float lifecycle, cut/copy/paste — all undoable
 - Animation: timeline with per-frame durations, playback with tag ranges (loop/pingpong/hold), onion skin, drag-reorder frames
 - Layers: opacity, visibility, rename, reorder, merge-down
-- Color engine: coat-swap (remap colors across every frame in one undo step), palette edit mode, ramps, .gpl import/export
-- Sheets & IO: sprite-sheet labeler (rows → named tags), sheet+JSON repack, GIF and animated WebP export (worker-encoded), px() char-map export, .sprite project files, OPFS autosave
+- Color engine: coat-swap (remap colors across every frame in one undo step), palette edit mode, ramps, .gpl import/export (incl. Aseprite RGBA)
+- Sheets & IO: sprite-sheet labeler (rows → named tags), sheet+JSON repack, lossless GIF and animated WebP export (worker-encoded), px() char-map export, .sprite project files, dual-store autosave (OPFS + localStorage, newer-wins)
+- Hand-drawn 44-glyph icon set on one 16×16 grid, focus-visible everywhere
+- Touch & Apple Pencil: pinch/pan gestures, palm rejection, pressure→brush (`p`)
+- Installable PWA — works fully offline; first run opens mochi, the demo cat
 - Command-pattern undo/redo across EVERYTHING, byte-budgeted history panel
+- 311 unit + 51 e2e tests, ~46 kB gzipped, zero runtime dependencies
 
 ## Where it's going
 
-See [`docs/ROADMAP.md`](docs/ROADMAP.md) — one wave left: ship (touch/pencil,
-PWA offline, hosting, onboarding).
+See [`docs/ROADMAP.md`](docs/ROADMAP.md) — all eight waves shipped; hosting/public
+URL is the remaining call.
 
 Architecture (frozen contracts, module map): [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
