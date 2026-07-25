@@ -189,7 +189,8 @@ test('png export downloads the drawn frame', async ({ page }) => {
   const c = await canvasCenter(page);
   await page.mouse.click(c.x, c.y);
   const dl = page.waitForEvent('download');
-  await page.locator('.sl-act-export').click();
+  await page.locator('.sl-act-more').click(); // png lives in the export menu
+  await page.getByRole('menuitem', { name: /^png$/ }).click();
   const download = await dl;
   expect(download.suggestedFilename()).toBe('untitled.png');
   const path = await download.path();

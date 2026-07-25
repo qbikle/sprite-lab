@@ -140,8 +140,9 @@ test('export menu opens on ArrowDown and returns focus to the trigger', async ({
   await trigger.focus();
   await page.keyboard.press('ArrowDown');
   await expect(trigger).toHaveAttribute('aria-expanded', 'true');
-  await expect(page.getByRole('menuitem', { name: /sheet \+ json/ })).toBeFocused();
+  await expect(page.getByRole('menuitem', { name: /^png$/ })).toBeFocused();
 
+  await page.keyboard.press('ArrowDown');
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('ArrowDown');

@@ -142,6 +142,13 @@ textarea,
   gap: var(--sp-2);
 }
 
+/* the export menu trigger carries a caret glyph beside its label */
+.sl-act-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
 /* ── controls ───────────────────────────────────────────── */
 
 /* :where() keeps the base skin at zero-class specificity — single-class

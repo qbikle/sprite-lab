@@ -218,6 +218,7 @@ test('walk-cycle demo: 3 frames, 2 layers, onion, export still works', async ({ 
   expect(p.onionEnabled).toBe(true);
 
   const dl = page.waitForEvent('download');
-  await page.locator('.sl-act-export').click();
+  await page.locator('.sl-act-more').click();
+  await page.getByRole('menuitem', { name: /^png$/ }).click();
   expect((await (await dl).path())).toBeTruthy();
 });

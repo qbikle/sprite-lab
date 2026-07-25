@@ -29,6 +29,7 @@ import { SelectRectTool } from '../tools/select-rect';
 import { LassoTool } from '../tools/lasso';
 import { MoveTool } from '../tools/move';
 import { Shell } from '../ui/shell';
+import { icon } from '../ui/icons';
 import { Shortcuts } from '../ui/shortcuts';
 import { ToolbarPanel } from '../ui/panels/toolbar';
 import { ColorPanel } from '../ui/panels/color';
@@ -432,11 +433,11 @@ export class App {
       adopt(SpriteDoc.blank(32, 32, 'untitled'));
     });
     addAction('sl-act-open', 'open', () => openFilePicker(openImage, adopt, status));
-    addAction('sl-act-export', 'export', () => {
+    const exportPngFrame = (): void => {
       void exportPng(editor.doc, editor.activeFrame)
         .then((blob) => downloadBlob(blob, `${editor.doc.meta.name}.png`))
         .catch(() => status('png export failed'));
-    });
+    };
 
     const exportSheetJson = (): void => {
       const name = editor.doc.meta.name;
@@ -517,6 +518,7 @@ export class App {
     };
 
     this.mountExportMenu(actionsHost, [
+      { label: 'png', cls: 'sl-act-export', run: exportPngFrame },
       { label: 'sheet + json', run: exportSheetJson },
       { label: 'gif', run: exportGif },
       {
@@ -672,8 +674,9 @@ export class App {
     }
   }
 
-  /** 'export…' topbar button + anchored dropdown. Closes on outside click / Esc;
-   *  ArrowUp/ArrowDown walk the items. sl-act-export stays a direct png button. */
+  /** 'export' topbar button (caret glyph) + anchored dropdown — every export
+   *  lives here, png first. Closes on outside click / Esc; ArrowUp/ArrowDown
+   *  walk the items. */
   private mountExportMenu(
     host: HTMLElement,
     items: ReadonlyArray<{ label: string; cls?: string; run: () => void }>,
@@ -683,7 +686,7 @@ export class App {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'sl-act-more';
-    button.textContent = 'export…';
+    button.append('export', icon('caret-down'));
     button.setAttribute('aria-haspopup', 'menu');
     button.setAttribute('aria-expanded', 'false');
     const menu = document.createElement('div');
