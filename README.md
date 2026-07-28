@@ -1,5 +1,7 @@
 # sprite-lab
 
+**Live: [sprite-lab.qbikle.workers.dev](https://sprite-lab.qbikle.workers.dev)** — installable PWA, works offline.
+
 A cozy-retro, professional pixel-art & animation editor for the web. Zero runtime
 dependencies, strict TypeScript, files in — files out.
 
@@ -36,8 +38,8 @@ npm run e2e        # playwright end-to-end (side port 5199)
 
 ## Where it's going
 
-See [`docs/ROADMAP.md`](docs/ROADMAP.md) — all eight waves shipped; hosting/public
-URL is the remaining call.
+See [`docs/ROADMAP.md`](docs/ROADMAP.md) — all eight waves shipped, hosted on
+Cloudflare Workers (auto-deploys from `main`; bump `public/sw.js` VERSION per release).
 
 Architecture (frozen contracts, module map): [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
