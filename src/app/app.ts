@@ -38,6 +38,8 @@ import { mountFirstRunCard, welcomeLine } from '../ui/welcome';
 import { docFromChoice, openNewDocModal, openResizeModal } from '../ui/panels/newdoc';
 import { openExportModal } from '../ui/panels/exportmodal';
 import { PreviewPanel } from '../ui/panels/preview';
+import { openArcade, setRemixParent } from '../ui/panels/arcade';
+import type { ArcadePost } from '../net/arcade';
 import { Shortcuts } from '../ui/shortcuts';
 import { ToolbarPanel } from '../ui/panels/toolbar';
 import { ColorPanel } from '../ui/panels/color';
@@ -430,6 +432,7 @@ export class App {
     this.teardown.push(() => preview.unmount());
 
     const adopt = (next: SpriteDoc): void => {
+      setRemixParent(null); // any non-remix adoption voids stale lineage
       player.pause();
       setRangeFromTag(null);
       editor.replaceDoc(next);
@@ -639,6 +642,28 @@ export class App {
       trigger.removeEventListener('click', openExport);
       trigger.removeEventListener('keydown', onTriggerKey);
       trigger.remove();
+    });
+    addAction('sl-act-arcade', 'arcade', () => {
+      openArcade({
+        getDoc: () => editor.doc,
+        adoptRemix: (remixDoc: SpriteDoc, post: ArcadePost) => {
+          const dirty = history.canUndo || history.canRedo || docHasPixels();
+          const proceed = dirty
+            ? confirmModal({
+                title: 'remix this sprite',
+                body: `open '${post.title}' by ${post.handle}? your current sprite will be discarded.`,
+                confirmLabel: 'remix',
+                danger: true,
+              })
+            : Promise.resolve(true);
+          void proceed.then((ok) => {
+            if (!ok) return; // declined = no adoption, no lineage
+            adopt(remixDoc); // clears the seam via adopt()'s first line…
+            setRemixParent(post); // …then seeds it for the next publish
+            status(`remixing '${post.title}' — post it back when it's yours`);
+          });
+        },
+      });
     });
     addAction('sl-act-theme', 'theme', toggleTheme);
 

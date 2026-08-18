@@ -21,7 +21,9 @@ npm run test       # vitest unit suite (core model)
 npm run e2e        # playwright end-to-end (side port 5199)
 ```
 
-## Today (Waves 1–10)
+## Today (Waves 1–12)
+
+- **The arcade** — an in-app community wall: post your sprite (anonymous, 3/day), browse a gallery of live-animating pixels, heart things, and remix any post straight into your editor. The editor itself never needs the network.
 
 - Crisp, dpr-aware canvas — scroll pans, ctrl/cmd+scroll zooms to cursor (25%–6400%), dark + light themes, keyboard-first (`?`)
 - New-sprite modal (size presets, custom up to 512, palette source, background) + canvas resize with a 9-point anchor — click the size in the statusbar

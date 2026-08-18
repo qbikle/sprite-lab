@@ -224,3 +224,17 @@ never touch the doc, the canvas, or the DOM directly.
   ToolbarPanel opts gained optional `onFlipX/onFlipY/onRotate`;
   `openNewDocModal` gained optional `onDemo` (demo entry lives in its footer);
   icons + `flip-x`/`flip-y` (derived) and `rotate-cw` (47 glyphs).
+- Wave 12 additions (the arcade — first networked feature, still zero runtime
+  deps): `src/net/arcade.ts` is the app's ONLY networked module (fetch +
+  CompressionStream/DecompressionStream; base = cyrodiil `/v1/sl`, DEV
+  localhost:8080, overridable via localStorage `sprite-lab:v2:arcade-api`;
+  anonId at `sprite-lab:v2:arcade-anon`, lazy session, single 401 re-mint;
+  all failures throw `ArcadeError{code}`; `encodeDoc`/`decodePost` reuse the
+  `.sprite` JSON serialization with a client-side 2MiB gunzip cap;
+  `ARCADE_LIMITS` = 64 side / 64 frames / 110k chars mirroring the server).
+  `src/ui/panels/arcade.ts` (`openArcade`) is the gallery overlay on Modal —
+  one shared rAF animates ≤12 visible thumbs (IntersectionObserver), remix
+  lineage flows through module-level `setRemixParent`/`getRemixParent`
+  (cleared by `adopt()`'s first line, seeded only after the remix confirm).
+  The editor remains 100% offline-capable — every arcade failure is a cozy
+  in-overlay state, never an editor error.

@@ -2558,3 +2558,600 @@ textarea,
   grid-column: 1 / -1;
   justify-self: center;
 }
+
+/* ===== wave 12: arcade ===== */
+
+/* The community wall (ui/panels/arcade.ts) rides the shared Modal as one
+   near-fullscreen card: marquee strip up top (chasing cabinet lights), a
+   scrolling gallery grid, a publish pane the card flips to, and a footer
+   status line. Tokens only — both themes come from the sheet. */
+
+.sl-modal-card.sl-arcade {
+  width: min(1100px, 94vw);
+  max-width: min(1100px, 94vw);
+  height: 88vh;
+  max-height: 88vh;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* several arcade children carry author display values — keep [hidden] honest */
+.sl-arcade [hidden] {
+  display: none !important;
+}
+
+/* ── marquee ────────────────────────────────────────────── */
+
+.sl-arcade-marquee {
+  position: relative;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: var(--sp-3) var(--sp-4) var(--sp-2);
+  border-bottom: 2px solid var(--border);
+  overflow: hidden;
+}
+
+/* cabinet light chase: two dotted strips crawling in opposite directions */
+.sl-arcade-marquee::before,
+.sl-arcade-marquee::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background-image: repeating-linear-gradient(
+    90deg,
+    var(--accent) 0 6px,
+    transparent 6px 14px
+  );
+  opacity: 0.5;
+  animation: sl-chase 1.2s linear infinite;
+}
+
+.sl-arcade-marquee::before {
+  top: 0;
+}
+
+.sl-arcade-marquee::after {
+  bottom: -2px;
+  animation-direction: reverse;
+}
+
+@keyframes sl-chase {
+  to {
+    background-position-x: 14px;
+  }
+}
+
+.sl-arcade-title {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.3em;
+  margin-right: -0.3em;
+  color: var(--accent);
+  text-shadow: 2px 2px 0 var(--shadow);
+  padding: var(--sp-1) 0;
+}
+
+.sl-arcade-stats {
+  font-size: var(--fs-small);
+  letter-spacing: 0.08em;
+  color: var(--dim);
+  min-height: 1.2em;
+}
+
+/* ── wall ───────────────────────────────────────────────── */
+
+.sl-arcade-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--sp-4);
+}
+
+.sl-arcade-crumb {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+  color: var(--dim);
+  font-size: var(--fs-small);
+  letter-spacing: 0.08em;
+}
+
+.sl-arcade-wall {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: var(--sp-3);
+  align-items: stretch;
+}
+
+.sl-arcade-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  background: var(--panel-2);
+  border: 2px solid var(--border);
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+
+.sl-card-in {
+  animation: sl-card-in 240ms ease-out backwards;
+}
+
+@keyframes sl-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/* a freshly published card drops onto the wall with a small bounce */
+.sl-card-drop {
+  animation: sl-card-drop 360ms ease-out backwards;
+}
+
+@keyframes sl-card-drop {
+  0% {
+    opacity: 0;
+    transform: translateY(-16px);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(3px);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+.sl-arcade-thumb {
+  position: relative;
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background-image: repeating-conic-gradient(var(--checker-a) 0% 25%, var(--checker-b) 0% 50%);
+  background-size: 12px 12px;
+}
+
+.sl-arcade-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.sl-arcade-thumb-sad {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--dim);
+  letter-spacing: 2px;
+  background: var(--panel-2);
+}
+
+.sl-modal-card .sl-arcade-remixtag {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  padding: 0 5px;
+  font-size: var(--fs-small);
+  background: var(--panel);
+  border: 1px solid var(--accent-2);
+  color: var(--text);
+  line-height: 16px;
+}
+
+.sl-arcade-meta {
+  min-width: 0;
+}
+
+.sl-arcade-name {
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sl-arcade-by {
+  color: var(--dim);
+  font-size: var(--fs-small);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sl-arcade-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  margin-top: auto;
+}
+
+.sl-modal-card .sl-arcade-heart {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  color: var(--dim);
+  background: transparent;
+  border-color: transparent;
+}
+
+.sl-modal-card .sl-arcade-heart:hover:not(:disabled) {
+  color: var(--text);
+  filter: none;
+}
+
+.sl-modal-card .sl-arcade-heart.sl-hearted {
+  color: var(--danger);
+}
+
+.sl-arcade-heart-glyph {
+  display: flex;
+}
+
+.sl-arcade-heart-count {
+  font-size: var(--fs-small);
+}
+
+.sl-arcade-heart.sl-hearted .sl-arcade-heart-count {
+  font-weight: 700;
+}
+
+/* pixel-heart burst: 5 tiny squares scatter from the button */
+.sl-arcade-burst {
+  position: absolute;
+  left: 50%;
+  top: 2px;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.sl-arcade-burst i {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  background: var(--danger);
+  animation: sl-burst-fly 600ms ease-out forwards;
+}
+
+.sl-arcade-burst i:nth-child(2) {
+  animation-delay: 40ms;
+}
+
+.sl-arcade-burst i:nth-child(3) {
+  animation-delay: 20ms;
+}
+
+.sl-arcade-burst i:nth-child(4) {
+  animation-delay: 60ms;
+}
+
+.sl-arcade-burst i:nth-child(5) {
+  animation-delay: 30ms;
+}
+
+@keyframes sl-burst-fly {
+  from {
+    opacity: 1;
+    transform: translate(0, 0);
+  }
+  to {
+    opacity: 0;
+    transform: translate(var(--dx), var(--dy));
+  }
+}
+
+.sl-modal-card .sl-arcade-remix {
+  margin-left: auto;
+}
+
+.sl-modal-card .sl-arcade-more {
+  color: var(--dim);
+  padding: 2px 6px;
+  background: transparent;
+  border-color: transparent;
+}
+
+.sl-modal-card .sl-arcade-more:hover:not(:disabled) {
+  color: var(--text);
+  filter: none;
+}
+
+/* ── report mini-flow (overlays its card) ───────────────── */
+
+.sl-arcade-report {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  background: var(--panel);
+  border: 2px solid var(--border);
+}
+
+.sl-arcade-report-ask {
+  font-weight: 700;
+}
+
+.sl-arcade input {
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  padding: 3px 6px;
+  width: 100%;
+  min-width: 0;
+}
+
+.sl-arcade input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.sl-arcade-report-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+}
+
+.sl-arcade-report-row button {
+  white-space: nowrap;
+}
+
+.sl-arcade-report-thanks {
+  text-align: center;
+  color: var(--ok);
+}
+
+/* ── post-yours card + tail + void ──────────────────────── */
+
+.sl-modal-card .sl-arcade-post-yours {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  min-height: 200px;
+  background: transparent;
+  border: 2px dashed var(--accent);
+  color: var(--accent);
+  box-shadow: none;
+  cursor: pointer;
+}
+
+.sl-modal-card .sl-arcade-post-yours:hover:not(:disabled) {
+  filter: none;
+  background: var(--panel-2);
+}
+
+.sl-arcade-post-yours-glyph {
+  color: var(--accent);
+}
+
+.sl-arcade-post-yours:hover .sl-arcade-post-yours-glyph {
+  transform: translateY(-2px);
+}
+
+.sl-arcade-post-yours-title {
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.sl-arcade-post-yours-sub {
+  color: var(--dim);
+  font-size: var(--fs-small);
+}
+
+.sl-arcade-tail {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-3);
+  min-height: 48px;
+  padding: var(--sp-3);
+  color: var(--dim);
+  letter-spacing: 0.04em;
+  text-align: center;
+}
+
+.sl-arcade-void {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-3);
+  min-height: 55vh;
+  padding: var(--sp-4);
+  text-align: center;
+}
+
+.sl-arcade-void-face {
+  font-size: 20px;
+  letter-spacing: 3px;
+  color: var(--dim);
+}
+
+.sl-arcade-void-line {
+  color: var(--text);
+  max-width: 40ch;
+  line-height: 1.5;
+}
+
+/* ── publish pane ───────────────────────────────────────── */
+
+.sl-arcade-publish {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  padding: var(--sp-4);
+}
+
+.sl-modal-card .sl-arcade-back {
+  align-self: flex-start;
+  color: var(--dim);
+  background: transparent;
+  border-color: transparent;
+}
+
+.sl-modal-card .sl-arcade-back:hover:not(:disabled) {
+  color: var(--text);
+  filter: none;
+}
+
+.sl-arcade-pub-grid {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: var(--sp-4);
+  align-items: start;
+}
+
+@media (max-width: 680px) {
+  .sl-arcade-pub-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.sl-arcade-pub-thumb {
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background-image: repeating-conic-gradient(var(--checker-a) 0% 25%, var(--checker-b) 0% 50%);
+  background-size: 12px 12px;
+}
+
+.sl-arcade-pub-dims {
+  margin-top: var(--sp-1);
+  text-align: center;
+  color: var(--dim);
+  font-size: var(--fs-small);
+  letter-spacing: 0.08em;
+}
+
+.sl-arcade-pub-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  max-width: 460px;
+}
+
+.sl-arcade-pub-remix {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  border: 1px solid var(--border);
+  border-left: 6px solid var(--accent-2);
+  color: var(--dim);
+}
+
+.sl-arcade-pub-remix-name {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.sl-modal-card .sl-arcade-pub-remix-clear {
+  margin-left: auto;
+  padding: 0 6px;
+  color: var(--dim);
+  background: transparent;
+  border-color: transparent;
+}
+
+.sl-modal-card .sl-arcade-pub-remix-clear:hover:not(:disabled) {
+  color: var(--text);
+  filter: none;
+}
+
+.sl-arcade-pub-field label {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--dim);
+  font-size: var(--fs-small);
+  letter-spacing: 0.08em;
+}
+
+.sl-arcade-pub-handle-row {
+  display: flex;
+  gap: var(--sp-2);
+}
+
+.sl-arcade-pub-verdict {
+  color: var(--ok);
+  min-height: 1.2em;
+}
+
+.sl-arcade-pub-verdict.sl-verdict-bad {
+  color: var(--danger);
+}
+
+.sl-arcade-pub-actions {
+  display: flex;
+}
+
+.sl-modal-card .sl-arcade-pub-post {
+  padding: 6px 18px;
+}
+
+.sl-arcade-pub-status {
+  color: var(--danger);
+  min-height: 1.2em;
+  line-height: 1.5;
+}
+
+/* ── footer status line ─────────────────────────────────── */
+
+.sl-arcade-status {
+  flex: none;
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  padding: var(--sp-1) var(--sp-4);
+  border-top: 2px solid var(--border);
+  color: var(--text);
+  font-size: var(--fs-small);
+  letter-spacing: 0.04em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sl-arcade-marquee::before,
+  .sl-arcade-marquee::after,
+  .sl-card-in,
+  .sl-card-drop {
+    animation: none;
+  }
+
+  /* JS skips spawning bursts under reduced motion; this is the backstop */
+  .sl-arcade-burst {
+    display: none;
+  }
+
+  .sl-arcade-post-yours:hover .sl-arcade-post-yours-glyph {
+    transform: none;
+  }
+}
