@@ -38,11 +38,11 @@ npm run e2e        # playwright end-to-end (side port 5199)
 - Sheets & IO: sprite-sheet labeler (rows → named tags), sheet+JSON repack, lossless GIF and animated WebP export (worker-encoded), px() char-map export, .sprite project files, dual-store autosave (OPFS + localStorage, newer-wins)
 - Timelapse export — a "watch it drawn" GIF replayed from your undo history
 - Custom stamp brushes (save a selection, paint with it), a daily drawing dare, lospec palette import
-- Hand-drawn 44-glyph icon set on one 16×16 grid, focus-visible everywhere
+- Hand-drawn 48-glyph icon set on one 16×16 grid, focus-visible everywhere
 - Touch & Apple Pencil: pinch/pan gestures, palm rejection, pressure→brush (`p`)
 - Installable PWA — works fully offline; first run opens mochi, the demo cat
 - Command-pattern undo/redo across EVERYTHING, byte-budgeted history panel
-- 311 unit + 51 e2e tests, ~46 kB gzipped, zero runtime dependencies
+- 446 unit + 116 e2e tests, ~69 kB gzipped, zero runtime dependencies
 
 ## Where it's going
 
