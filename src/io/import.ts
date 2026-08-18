@@ -67,6 +67,7 @@ function routeFile(
   onImage: (img: DecodedImage) => void,
   onSprite: (doc: SpriteDoc) => void,
   onStatus?: (msg: string) => void,
+  name?: string,
 ): void {
   const report = (err: unknown): void => {
     onStatus?.(err instanceof Error ? err.message : String(err));
@@ -75,7 +76,7 @@ function routeFile(
     void spriteFileToDoc(file).then(onSprite).catch(report);
     return;
   }
-  void decodePng(file).then(onImage).catch(report);
+  void decodePng(file, name).then(onImage).catch(report);
 }
 
 /** Whole-window drag-drop: images → onImage, .sprite files → onSprite. Returns uninstall. */
@@ -130,6 +131,38 @@ export function installDragDrop(
     window.removeEventListener('drop', onDrop);
     document.body.classList.remove('sl-dropping');
   };
+}
+
+/** Window-level paste: image files → onImage (named 'pasted' — the app's size
+ *  heuristic routes big sheets to the importer), .sprite files → onSprite.
+ *  Inert while focus sits in a text field or a modal dialog is open. Returns
+ *  uninstall. */
+export function installPaste(
+  onImage: (img: DecodedImage) => void,
+  onSprite: (doc: SpriteDoc) => void,
+  onStatus?: (msg: string) => void,
+): () => void {
+  const onPaste = (e: ClipboardEvent): void => {
+    const t = e.target;
+    if (t instanceof HTMLElement &&
+        (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const files: File[] = [];
+    for (const item of items) {
+      if (item.kind !== 'file') continue;
+      const file = item.getAsFile();
+      if (file) files.push(file);
+    }
+    const file = files.find(isSpriteFile) ?? files.find((f) => f.type.startsWith('image/'));
+    if (!file) return;
+    e.preventDefault();
+    routeFile(file, onImage, onSprite, onStatus, 'pasted');
+  };
+
+  window.addEventListener('paste', onPaste);
+  return () => window.removeEventListener('paste', onPaste);
 }
 
 export function openFilePicker(

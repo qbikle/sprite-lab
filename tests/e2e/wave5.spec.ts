@@ -119,9 +119,13 @@ test('.sprite round-trips through save and open', async ({ page }) => {
   await page.getByRole('menuitem', { name: /save \.sprite/ }).click();
   const file = await (await dl).path();
 
-  await page.locator('.sl-act-new').click(); // discard confirm
-  page.once('dialog', (d) => void d.accept());
-  await page.waitForTimeout(200);
+  // wave 9 flow: themed discard confirm → new-doc modal → create (32×32 default)
+  await page.locator('.sl-act-new').click();
+  await page.locator('.sl-modal-danger').click();
+  await page.locator('.sl-newdoc-create').click();
+  await expect
+    .poll(async () => (await probe(page)).nonZeroActive)
+    .toBe(0);
 
   await page.locator('.sl-act-more').click();
   const chooser = page.waitForEvent('filechooser');

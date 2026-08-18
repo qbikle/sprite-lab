@@ -142,6 +142,14 @@ export class SpriteDoc {
     return this.newFrameId();
   }
 
+  /** Wave 9 (additive): dims writer for ResizeCanvas ONLY — the command owns
+   *  re-blitting every cel to the new size before/after calling this. */
+  setSize(w: number, h: number): void {
+    const self = this as { width: number; height: number };
+    self.width = w;
+    self.height = h;
+  }
+
   /**
    * Flatten visible layers of a frame (opacity applied, straight-alpha "over").
    * With `into`+`rect`, composites only that sub-rect into the docW×docH buffer.

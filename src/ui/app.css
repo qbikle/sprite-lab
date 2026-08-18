@@ -1218,30 +1218,13 @@ textarea,
 
 /* ── cheat sheet ────────────────────────────────────────── */
 
-.sl-cheatsheet {
-  position: fixed;
-  inset: 0;
-  z-index: 100;
-  background-color: var(--shadow);
-  background-image: linear-gradient(var(--shadow), var(--shadow));
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--sp-4);
-}
-
-.sl-cheatsheet-panel {
-  background: var(--panel);
-  color: var(--text);
-  border: 2px solid var(--border);
-  box-shadow: 6px 6px 0 var(--shadow);
+/* Wave 9: the sheet rides the shared Modal — .sl-cheatsheet is the CARD now.
+   Skin (panel bg / border / shadow / padding) comes from .sl-modal-card;
+   only sizing lives here. */
+.sl-modal-card.sl-cheatsheet {
   width: 100%;
   max-width: 720px;
   max-height: 84vh;
-  overflow: auto;
-  padding: var(--sp-4);
-  font-family: var(--font-ui);
-  font-size: var(--fs-ui);
 }
 
 .sl-cheatsheet-head {
@@ -1630,4 +1613,528 @@ textarea,
 /* the timeline strip keeps native horizontal touch scrolling */
 .sl-tl-scroll {
   touch-action: pan-x;
+}
+
+/* ===== wave 9: modal ===== */
+
+/* Shared modal primitive (ui/modal.ts). Lives on <body>, outside .sl-shell —
+   button base skin is re-scoped here at zero specificity (:where), matching
+   the shell's, so single-class rules (.sl-modal-primary …) override cleanly. */
+
+.sl-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background-color: var(--shadow);
+  background-image: linear-gradient(var(--shadow), var(--shadow));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-4);
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+
+.sl-modal-overlay.sl-open {
+  opacity: 1;
+}
+
+.sl-modal-card {
+  background: var(--panel);
+  color: var(--text);
+  border: 2px solid var(--border);
+  box-shadow: 6px 6px 0 var(--shadow);
+  min-width: 280px;
+  max-width: min(480px, 92vw);
+  max-height: 92vh;
+  overflow: auto;
+  padding: var(--sp-4);
+  font-family: var(--font-ui);
+  font-size: var(--fs-ui);
+  outline: none;
+  transform: translateY(8px);
+  transition: transform 120ms ease-out;
+}
+
+.sl-modal-overlay.sl-open .sl-modal-card {
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sl-modal-overlay,
+  .sl-modal-card {
+    transition: none;
+  }
+}
+
+.sl-modal-title {
+  display: flex;
+  align-items: center;
+  margin: 0 0 var(--sp-3);
+  font-size: var(--fs-ui);
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 0.08em;
+}
+
+.sl-modal-title::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  background: var(--accent);
+  margin-right: var(--sp-2);
+}
+
+.sl-modal-body {
+  margin: 0 0 var(--sp-4);
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.sl-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+}
+
+:where(.sl-modal-card) button {
+  font: inherit;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  padding: 2px 8px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.sl-modal-card button svg {
+  display: block;
+  flex: none;
+  pointer-events: none;
+}
+
+.sl-modal-card button:hover:not(:disabled) {
+  filter: brightness(1.15);
+}
+
+:root[data-theme='light'] .sl-modal-card button:hover:not(:disabled) {
+  filter: brightness(0.95);
+}
+
+.sl-modal-card button:active:not(:disabled) {
+  transform: translate(1px, 1px);
+}
+
+.sl-modal-card button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.sl-modal-card :is(button, input):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.sl-modal-actions button {
+  padding: 4px 14px;
+}
+
+.sl-modal-primary {
+  background: var(--accent);
+  color: var(--panel);
+  font-weight: 700;
+}
+
+/* --bg (not --panel) as fill text: 4.6:1 on --danger in BOTH themes */
+.sl-modal-danger {
+  background: var(--danger);
+  color: var(--bg);
+  font-weight: 700;
+}
+
+/* gesture-note separator in cheat-sheet key columns ("scroll · cmd scroll") */
+.sl-cheat-sep {
+  color: var(--dim);
+  padding: 0 2px;
+}
+
+/* ===== wave 9: welcome ===== */
+
+/* First-run corner card (ui/welcome.ts): floats bottom-right above the
+   statusbar (26px row), under menus (60) and modals (100). It must never
+   block anything: the card is click-transparent (pointer-events: none) —
+   only the dismiss button takes input — so the canvas, timeline and onion
+   controls under it stay fully interactive. */
+
+.sl-welcome {
+  position: fixed;
+  right: var(--sp-3);
+  bottom: 34px;
+  z-index: 50;
+  width: 272px;
+  pointer-events: none;
+  padding: var(--sp-3);
+  background: var(--panel);
+  color: var(--text);
+  border: 2px solid var(--border);
+  box-shadow: 6px 6px 0 var(--shadow);
+  font-family: var(--font-ui);
+  font-size: var(--fs-ui);
+  animation: sl-welcome-in 200ms ease-out;
+}
+
+@keyframes sl-welcome-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sl-welcome {
+    animation: none;
+  }
+}
+
+.sl-welcome-head {
+  display: flex;
+  align-items: center;
+  margin-bottom: var(--sp-2);
+}
+
+.sl-welcome-title {
+  display: flex;
+  align-items: center;
+  color: var(--accent);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.sl-welcome-title::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  background: var(--accent);
+  margin-right: var(--sp-2);
+}
+
+.sl-welcome-body {
+  margin: 0 0 var(--sp-3);
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.sl-welcome kbd {
+  font: inherit;
+  font-size: var(--fs-small);
+  line-height: 18px;
+  min-width: 18px;
+  padding: 0 5px;
+  display: inline-block;
+  text-align: center;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-bottom-width: 3px;
+  border-radius: var(--radius);
+}
+
+.sl-welcome-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+
+.sl-welcome-kao {
+  color: var(--dim);
+  font-size: var(--fs-small);
+  letter-spacing: 0.05em;
+}
+
+:where(.sl-welcome) button {
+  font: inherit;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  padding: 2px 10px;
+  cursor: pointer;
+  touch-action: manipulation;
+  pointer-events: auto;
+}
+
+.sl-welcome button:hover {
+  filter: brightness(1.15);
+}
+
+:root[data-theme='light'] .sl-welcome button:hover {
+  filter: brightness(0.95);
+}
+
+.sl-welcome button:active {
+  transform: translate(1px, 1px);
+}
+
+.sl-welcome button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* ===== wave 9: new-doc + resize modals (merged from docs/drafts) ===== */
+/* ===== wave 9: new-doc + resize dialogs (agent N draft — merge into app.css) =====
+   Rides the shared .sl-modal-* skin. Modal lives on <body>, outside .sl-shell,
+   so text/number inputs get their base skin here (mirrors `.sl-shell input`).
+   Tokens only; `@keyframes sl-shake` already lives in app.css. */
+
+.sl-modal-card.sl-newdoc {
+  width: min(380px, 92vw);
+}
+
+.sl-modal-card.sl-resize {
+  width: min(320px, 92vw);
+}
+
+/* ── shared input skin (modal-scoped) ───────────────────── */
+
+.sl-newdoc-num,
+.sl-newdoc-name,
+.sl-newdoc-bg,
+.sl-resize-num {
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  padding: 3px 8px;
+}
+
+.sl-newdoc-num:focus,
+.sl-newdoc-name:focus,
+.sl-newdoc-bg:focus,
+.sl-resize-num:focus {
+  border-color: var(--accent-2);
+  outline: none;
+}
+
+.sl-newdoc-num,
+.sl-resize-num {
+  width: 64px;
+  font-variant-numeric: tabular-nums;
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+.sl-newdoc-num::-webkit-outer-spin-button,
+.sl-newdoc-num::-webkit-inner-spin-button,
+.sl-resize-num::-webkit-outer-spin-button,
+.sl-resize-num::-webkit-inner-spin-button {
+  appearance: none;
+  margin: 0;
+}
+
+.sl-newdoc-num.sl-shake,
+.sl-newdoc-bg.sl-shake,
+.sl-resize-num.sl-shake {
+  animation: sl-shake 0.25s;
+  border-color: var(--danger);
+}
+
+/* ── rows: caption column + control ─────────────────────── */
+
+.sl-newdoc-row,
+.sl-resize-row {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+}
+
+.sl-newdoc-caption,
+.sl-resize-caption {
+  color: var(--dim);
+  font-size: var(--fs-small);
+  letter-spacing: 0.06em;
+}
+
+/* background row packs a chip between caption and input */
+.sl-newdoc-row:has(.sl-newdoc-bg) {
+  grid-template-columns: 88px auto minmax(0, 1fr);
+}
+
+/* multi-line control (radio stack): caption tops out instead of floating */
+.sl-newdoc-row:has(.sl-newdoc-radios) .sl-newdoc-caption {
+  align-self: start;
+  padding-top: 3px;
+}
+
+.sl-newdoc .sl-modal-actions,
+.sl-resize .sl-modal-actions {
+  margin-top: var(--sp-2);
+}
+
+/* ── preset chips ───────────────────────────────────────── */
+
+.sl-newdoc-presets {
+  display: flex;
+  gap: var(--sp-1);
+  margin-bottom: var(--sp-3);
+}
+
+.sl-newdoc-preset {
+  flex: 1 1 0;
+  padding: 3px 0;
+  font-size: var(--fs-small);
+  font-variant-numeric: tabular-nums;
+}
+
+.sl-newdoc-preset.active {
+  background: var(--accent);
+  color: var(--panel);
+  font-weight: 700;
+}
+
+/* ── size pair ──────────────────────────────────────────── */
+
+.sl-newdoc-size,
+.sl-resize-size {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.sl-newdoc-x,
+.sl-resize-x {
+  color: var(--dim);
+}
+
+/* ── palette source radios ──────────────────────────────── */
+
+.sl-newdoc-radios {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.sl-newdoc-radio {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  cursor: pointer;
+}
+
+.sl-newdoc-radio.disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.sl-newdoc-radio input[type='radio'] {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+/* ── background chip ────────────────────────────────────── */
+
+.sl-newdoc-bg-chip {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+}
+
+/* transparent = the canvas checker, shrunk */
+.sl-newdoc-bg-chip.is-clear {
+  background-image:
+    linear-gradient(45deg, var(--checker-b) 25%, transparent 25%, transparent 75%, var(--checker-b) 75%),
+    linear-gradient(45deg, var(--checker-b) 25%, transparent 25%, transparent 75%, var(--checker-b) 75%);
+  background-color: var(--checker-a);
+  background-size: 8px 8px;
+  background-position: 0 0, 4px 4px;
+}
+
+.sl-newdoc-bg {
+  width: 100%;
+  min-width: 0;
+}
+
+/* ── resize: current size + anchor grid ─────────────────── */
+
+.sl-resize-current {
+  margin: 0 0 var(--sp-3);
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.sl-resize-grid {
+  display: inline-grid;
+  grid-template-columns: repeat(3, 28px);
+  grid-auto-rows: 28px;
+  gap: 3px;
+}
+
+/* each tile parks its dot in the corner/edge it pins — the grid reads as
+   "where does the old content stay" at a glance */
+.sl-resize-anchor {
+  padding: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sl-resize-anchor[data-anchor='tl'],
+.sl-resize-anchor[data-anchor='t'],
+.sl-resize-anchor[data-anchor='tr'] {
+  align-items: flex-start;
+}
+
+.sl-resize-anchor[data-anchor='bl'],
+.sl-resize-anchor[data-anchor='b'],
+.sl-resize-anchor[data-anchor='br'] {
+  align-items: flex-end;
+}
+
+.sl-resize-anchor[data-anchor='tl'],
+.sl-resize-anchor[data-anchor='l'],
+.sl-resize-anchor[data-anchor='bl'] {
+  justify-content: flex-start;
+}
+
+.sl-resize-anchor[data-anchor='tr'],
+.sl-resize-anchor[data-anchor='r'],
+.sl-resize-anchor[data-anchor='br'] {
+  justify-content: flex-end;
+}
+
+.sl-resize-dot {
+  width: 8px;
+  height: 8px;
+  background: var(--dim);
+  pointer-events: none;
+}
+
+.sl-resize-anchor.active {
+  background: var(--accent);
+  border-color: var(--border);
+}
+
+.sl-resize-anchor.active .sl-resize-dot {
+  background: var(--panel);
+}
+
+/* ── statusbar size cell affordance ─────────────────────── */
+
+.sl-status-size-btn {
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+
+.sl-status-size-btn:hover,
+.sl-status-size-btn:focus-visible {
+  color: var(--accent);
 }

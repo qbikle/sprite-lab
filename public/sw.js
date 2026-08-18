@@ -1,5 +1,5 @@
 /* sprite-lab service worker — hand-rolled, zero deps. Bump VERSION to invalidate. */
-const VERSION = 'v2';
+const VERSION = 'v3';
 const CACHE = `sprite-lab-${VERSION}`;
 const PRECACHE = [
   './',

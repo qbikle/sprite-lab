@@ -92,6 +92,29 @@ export class EditorState implements ViewportDelegate {
           this.busRef.emit('layer:active', { index: max });
         }
       }
+      if (scope.kind === 'all') {
+        // Canvas dims can change under us (ResizeCanvas, incl. its undo/redo).
+        // Doc-sized session buffers keyed to the old dims would index with new-
+        // width math and commit scrambled pixels — drop them. Length checks
+        // make this fire only on genuine dims changes. A float's lifted pixels
+        // stay recoverable through the lift command in history.
+        const size = this.currentDoc.width * this.currentDoc.height;
+        if (this.stageBuf !== null && this.stageBuf.color.length !== size) {
+          this.stageBuf = null;
+          this.stagedCount = 0;
+          this.pendingRect = null;
+        }
+        const sel = this.selectionState;
+        if (sel !== null && sel.mask.length !== size) {
+          if (this.floatState !== null) this.host.float = null;
+          this.host.selection = null;
+        } else if (this.floatState !== null) {
+          const r = this.floatState.rect;
+          if (r.x + r.w > this.currentDoc.width || r.y + r.h > this.currentDoc.height) {
+            this.host.float = null;
+          }
+        }
+      }
     });
 
     const self = this;
@@ -154,6 +177,7 @@ export class EditorState implements ViewportDelegate {
   }
   get float(): FloatBuffer | null { return this.floatState; }
   get selection(): SelectionState | null { return this.selectionState; }
+  get hasClipboard(): boolean { return this.clipboard !== null; }
   get symmetry(): SymmetryMode { return this.symmetryMode; }
   get onion(): OnionConfig { return this.onionConfig; }
   setOnion(config: OnionConfig): void {

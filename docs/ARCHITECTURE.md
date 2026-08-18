@@ -197,3 +197,16 @@ never touch the doc, the canvas, or the DOM directly.
   accessor backed by `data-pen-pressure` on the container; PWA shell in public/
   (manifest + hand-rolled sw.js, PROD-only registration in main.ts); first-run demo
   doc `src/assets/demo.sprite.json` (?raw import, cookie+localStorage seen-marker).
+- Wave 9 additions: `ui/modal.ts` is THE dialog primitive (Modal class + confirmModal;
+  focus trap, module-level modal stack, capture-phase key swallow, refcounted scroll
+  lock) — new overlays build on it, `window.confirm` is retired; `SpriteDoc.setSize`
+  (internal, ResizeCanvas-only) + `ResizeCanvas` command (`core/commands/resize.ts`,
+  9-anchor, dirty 'all'); app resyncs compositor/viewport on `doc:changed {kind:'all'}`
+  when dims actually changed, and EditorState drops stale doc-sized session buffers
+  (stage, selection mask, out-of-bounds float) on the same signal; `StatusBar` opts
+  gained optional `onSizeClick` (size cell becomes the resize entry point);
+  `installPaste` in io/import.ts (drag-drop-parity handlers, yields when
+  `EditorState.hasClipboard`); wheel model REPLACED (supersedes the pipeline note
+  above): plain wheel pans both axes, ctrl/cmd+wheel zooms smoothly to cursor —
+  discrete stops remain on keyboard +/-/0; `ui/welcome.ts` (welcomeLine pool +
+  mountFirstRunCard).

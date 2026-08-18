@@ -1,7 +1,8 @@
 /**
  * Main canvas: checker → composite blit (crisp, dpr-aware) → overlays.
- * rAF-on-dirty only. Owns pointer input: space/middle-drag pan, wheel
- * zoom-to-cursor, pinch zoom; forwards drawing pointers to the delegate.
+ * rAF-on-dirty only. Owns pointer input: wheel pan (both axes), ctrl/cmd+wheel
+ * smooth zoom-to-cursor, space/middle-drag pan, pinch zoom; forwards drawing
+ * pointers to the delegate.
  */
 import type { OverlayCtx, PixelPt, PointerInfo, ViewportDelegate } from '../core/contracts';
 import type { Bus } from '../core/bus';
@@ -10,9 +11,8 @@ import type { Compositor } from './compositor';
 import { Overlays } from './overlays';
 import { invalidateThemeColors } from './theme';
 
-/** Wheel deltas normalized to css px per deltaMode: one zoom stop per ~100px. */
+/** Wheel deltas normalized to css px per deltaMode (line → px, page → view height). */
 const WHEEL_LINE_PX = 16;
-const WHEEL_STEP_PX = 100;
 
 /** Pen pressure 0..1 → effective brush footprint 1..size (ceil). */
 export function pressureBrushSize(pressure: number, size: number): number {
@@ -52,7 +52,6 @@ export class Viewport {
   private antTimer = 0;
   private hover: PixelPt | null = null;
   private spaceHeld = false;
-  private wheelAcc = 0;
   private dprWatch: (() => void) | null = null;
 
   private panning = false;
@@ -467,30 +466,24 @@ export class Viewport {
     }
   }
 
-  /** deltaY normalized to css px (line/page modes scaled up), then either the
-   *  smooth ctrl-pinch path or accumulation toward one stop per ~100px —
-   *  trackpad scrolls no longer fire a stop per two-finger tick. */
+  /** Figma model: plain wheel PANS (both axes — scroll down moves content up,
+   *  two-finger trackpad glides), ctrl/cmd+wheel (incl. trackpad pinch) zooms
+   *  smoothly to the cursor. Deltas normalized to css px per deltaMode.
+   *  Discrete zoom stops live on the keyboard (+/-/0) via camera.zoomStep. */
   private onWheel(e: WheelEvent): void {
     e.preventDefault();
     const scale = e.deltaMode === 1 ? WHEEL_LINE_PX : e.deltaMode === 2 ? this.cssH : 1;
+    const dx = e.deltaX * scale;
     const dy = e.deltaY * scale;
-    if (e.ctrlKey) {
-      this.wheelAcc = 0;
+    if (e.ctrlKey || e.metaKey) {
       if (dy === 0) return;
       this.camera.setZoom(this.camera.zoom * Math.exp(-dy * 0.01), e.offsetX, e.offsetY);
       this.bus.emit('camera:changed');
       return;
     }
-    if (dy === 0) return;
-    if (this.wheelAcc !== 0 && Math.sign(dy) !== Math.sign(this.wheelAcc)) this.wheelAcc = 0;
-    this.wheelAcc += dy;
-    let stepped = false;
-    while (Math.abs(this.wheelAcc) >= WHEEL_STEP_PX) {
-      this.camera.zoomStep(this.wheelAcc < 0 ? 1 : -1, e.offsetX, e.offsetY);
-      this.wheelAcc -= Math.sign(this.wheelAcc) * WHEEL_STEP_PX;
-      stepped = true;
-    }
-    if (stepped) this.bus.emit('camera:changed');
+    if (dx === 0 && dy === 0) return;
+    this.camera.panBy(-dx, -dy);
+    this.bus.emit('camera:changed');
   }
 
   private onKey(e: KeyboardEvent, down: boolean): void {

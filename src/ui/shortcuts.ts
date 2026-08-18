@@ -2,7 +2,11 @@
  * Central keymap. Every binding registers here; '?' renders the cheat sheet
  * from the registry (never hand-maintained). Skips events while typing in
  * inputs. Key syntax: 'b', 'shift+g', 'mod+z' (mod = ⌘ on mac, ctrl elsewhere).
+ * The sheet itself rides the shared Modal (Wave 9) — key swallowing, focus
+ * trap and scroll lock come from there; '?'-to-close is a capture listener
+ * registered BEFORE the modal opens so it wins the capture order.
  */
+import { Modal } from './modal';
 
 export interface ShortcutDef {
   keys: string;
@@ -58,11 +62,33 @@ function isTypingTarget(t: EventTarget | null): boolean {
   return t.isContentEditable;
 }
 
+/** Display-only cheat-sheet rows for pointer gestures — nothing to bind. */
+interface GestureNote {
+  group: string;
+  desc: string;
+  /** Combo strings rendered like key combos ('scroll', 'mod+scroll'). */
+  keys: string[];
+}
+
 export class Shortcuts {
   private readonly mac = isMacPlatform();
   private readonly bySig = new Map<string, ShortcutDef[]>();
   private readonly ordered: ShortcutDef[] = [];
-  private sheet: HTMLElement | null = null;
+  private sheetModal: Modal | null = null;
+  private readonly notes: readonly GestureNote[] = [
+    { group: 'canvas', desc: 'pan · zoom', keys: ['scroll', 'mod+scroll'] },
+  ];
+
+  /** While the sheet is open the Modal swallows every non-typing key, so the
+   *  '?' toggle must live on its own capture listener (added before the modal
+   *  opens — earlier registration on the same target fires first). */
+  private readonly onSheetKey = (e: KeyboardEvent): void => {
+    if (normalizeKeyName(e.key) === '?') {
+      e.preventDefault();
+      e.stopPropagation();
+      this.closeCheatSheet();
+    }
+  };
 
   constructor() {
     this.register({
@@ -92,7 +118,7 @@ export class Shortcuts {
   }
 
   toggleCheatSheet(): void {
-    if (this.sheet) this.closeCheatSheet();
+    if (this.sheetModal) this.closeCheatSheet();
     else this.openCheatSheet();
   }
 
@@ -116,13 +142,8 @@ export class Shortcuts {
 
   private handle(e: KeyboardEvent): void {
     const key = normalizeKeyName(e.key);
-    if (this.sheet) {
-      if (key === 'escape' || key === '?') {
-        e.preventDefault();
-        this.closeCheatSheet();
-      }
-      return;
-    }
+    // While the sheet is open the Modal's capture guard starves this handler;
+    // Esc closes via Modal, '?' via onSheetKey.
     if (isTypingTarget(e.target) && key !== 'escape') return;
     const sig = buildSig(key, e.ctrlKey, e.metaKey, e.shiftKey, e.altKey);
     const defs = this.bySig.get(sig);
@@ -145,14 +166,15 @@ export class Shortcuts {
   }
 
   private openCheatSheet(): void {
-    const overlay = document.createElement('div');
-    overlay.className = 'sl-cheatsheet';
-    overlay.setAttribute('role', 'dialog');
-    overlay.setAttribute('aria-modal', 'true');
-    overlay.setAttribute('aria-label', 'keyboard shortcuts');
-
-    const panel = document.createElement('div');
-    panel.className = 'sl-cheatsheet-panel';
+    if (this.sheetModal) return;
+    const modal = new Modal({
+      label: 'keyboard shortcuts',
+      className: 'sl-cheatsheet',
+      onClose: () => {
+        window.removeEventListener('keydown', this.onSheetKey, true);
+        this.sheetModal = null;
+      },
+    });
 
     const head = document.createElement('div');
     head.className = 'sl-cheatsheet-head';
@@ -174,50 +196,58 @@ export class Shortcuts {
       const i = GROUP_ORDER.indexOf(g);
       return i === -1 ? GROUP_ORDER.length : i;
     };
-    const names = [...byGroup.keys()].sort((a, b) => rank(a) - rank(b));
+    const nameSet = new Set([...byGroup.keys(), ...this.notes.map((n) => n.group)]);
+    const names = [...nameSet].sort((a, b) => rank(a) - rank(b));
+
+    const row = (desc: string, combos: string[]): HTMLElement => {
+      const el = document.createElement('div');
+      el.className = 'sl-cheat-row';
+      const descEl = document.createElement('span');
+      descEl.className = 'sl-cheat-desc';
+      descEl.textContent = desc;
+      const keysEl = document.createElement('span');
+      keysEl.className = 'sl-cheat-keys';
+      combos.forEach((combo, i) => {
+        if (i > 0) {
+          const sep = document.createElement('span');
+          sep.className = 'sl-cheat-sep';
+          sep.textContent = '·';
+          keysEl.appendChild(sep);
+        }
+        for (const token of this.displayTokens(combo)) {
+          const kbd = document.createElement('kbd');
+          kbd.textContent = token;
+          keysEl.appendChild(kbd);
+        }
+      });
+      el.append(descEl, keysEl);
+      return el;
+    };
 
     const groups = document.createElement('div');
     groups.className = 'sl-cheatsheet-groups';
     for (const name of names) {
-      const defs = byGroup.get(name);
-      if (!defs) continue;
+      const defs = byGroup.get(name) ?? [];
+      const notes = this.notes.filter((n) => n.group === name);
+      if (defs.length === 0 && notes.length === 0) continue;
       const group = document.createElement('div');
       group.className = 'sl-cheat-group';
       const groupTitle = document.createElement('div');
       groupTitle.className = 'sl-cheat-group-title';
       groupTitle.textContent = name;
       group.appendChild(groupTitle);
-      for (const def of defs) {
-        const row = document.createElement('div');
-        row.className = 'sl-cheat-row';
-        const desc = document.createElement('span');
-        desc.className = 'sl-cheat-desc';
-        desc.textContent = def.desc;
-        const keysEl = document.createElement('span');
-        keysEl.className = 'sl-cheat-keys';
-        for (const token of this.displayTokens(def.keys)) {
-          const kbd = document.createElement('kbd');
-          kbd.textContent = token;
-          keysEl.appendChild(kbd);
-        }
-        row.append(desc, keysEl);
-        group.appendChild(row);
-      }
+      for (const def of defs) group.appendChild(row(def.desc, [def.keys]));
+      for (const note of notes) group.appendChild(row(note.desc, note.keys));
       groups.appendChild(group);
     }
 
-    panel.append(head, groups);
-    overlay.appendChild(panel);
-    overlay.addEventListener('click', (ev) => {
-      if (ev.target === overlay) this.closeCheatSheet();
-    });
-    document.body.appendChild(overlay);
-    this.sheet = overlay;
+    modal.root.append(head, groups);
+    window.addEventListener('keydown', this.onSheetKey, true);
+    this.sheetModal = modal;
+    modal.open();
   }
 
   private closeCheatSheet(): void {
-    if (!this.sheet) return;
-    this.sheet.remove();
-    this.sheet = null;
+    this.sheetModal?.close();
   }
 }

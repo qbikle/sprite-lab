@@ -159,12 +159,16 @@ test('zoom keys, fit, grid toggle survive', async ({ page }) => {
   expect((await probe(page)).nonZero).toBeGreaterThan(0);
 });
 
-test('wheel zooms to cursor', async ({ page }) => {
+test('wheel pans, zoom untouched (wave 9 model)', async ({ page }) => {
   const z0 = (await probe(page)).zoom;
   const c = await canvasCenter(page);
   await page.mouse.move(c.x, c.y);
+  const pan0 = await page.evaluate(() => (window.__lab.camera as unknown as { panY: number }).panY);
   await page.mouse.wheel(0, -120);
-  expect((await probe(page)).zoom).toBeGreaterThan(z0);
+  await expect
+    .poll(() => page.evaluate(() => (window.__lab.camera as unknown as { panY: number }).panY))
+    .toBeGreaterThan(pan0); // scroll up → content moves down
+  expect((await probe(page)).zoom).toBe(z0);
 });
 
 test('cheat sheet opens on ? and closes on Escape', async ({ page }) => {

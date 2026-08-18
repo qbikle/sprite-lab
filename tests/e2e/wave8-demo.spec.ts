@@ -65,10 +65,12 @@ async function drawStroke(page: Page, dx = 30): Promise<void> {
   await page.mouse.up();
 }
 
-/* The demo doc has pixels, so 'new' asks for confirmation. */
+/* The demo doc has pixels, so 'new' asks for confirmation (wave 9: themed
+   confirm → new-doc modal → create with the 32×32 default). */
 async function newBlankDoc(page: Page): Promise<void> {
-  page.once('dialog', (d) => void d.accept());
   await page.locator('.sl-act-new').click();
+  await page.locator('.sl-modal-danger').click();
+  await page.locator('.sl-newdoc-create').click();
   await expect(page.locator('.sl-status')).toContainText('32×32');
 }
 

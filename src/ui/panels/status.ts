@@ -7,6 +7,8 @@ export interface StatusBarOpts {
   bus: Bus;
   getZoom(): number;
   getDocSize(): { w: number; h: number };
+  /** Wave 9 (additive): size cell click → resize dialog. Absent = plain cell. */
+  onSizeClick?(): void;
 }
 
 const EM_DASH = '—';
@@ -37,6 +39,21 @@ export class StatusBar {
     doc.className = 'sl-status-doc';
     const size = document.createElement('span');
     size.className = 'sl-status-size';
+    if (o.onSizeClick) {
+      const onSizeClick = o.onSizeClick.bind(o);
+      size.classList.add('sl-status-size-btn');
+      size.setAttribute('role', 'button');
+      size.tabIndex = 0;
+      size.title = 'resize canvas';
+      size.addEventListener('click', onSizeClick);
+      size.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        // keep play/pause + space-pan shortcuts out of the focused cell
+        e.preventDefault();
+        e.stopPropagation();
+        onSizeClick();
+      });
+    }
     const zoom = document.createElement('span');
     zoom.className = 'sl-status-zoom';
     doc.append(size, zoom);

@@ -21,9 +21,11 @@ npm run test       # vitest unit suite (core model)
 npm run e2e        # playwright end-to-end (side port 5199)
 ```
 
-## Today (Waves 1–8)
+## Today (Waves 1–9)
 
-- Crisp, dpr-aware canvas — smooth pan/zoom, zoom stops 25%–6400%, dark + light themes, keyboard-first (`?`)
+- Crisp, dpr-aware canvas — scroll pans, ctrl/cmd+scroll zooms to cursor (25%–6400%), dark + light themes, keyboard-first (`?`)
+- New-sprite modal (size presets, custom up to 512, palette source, background) + canvas resize with a 9-point anchor — click the size in the statusbar
+- Paste an image from the clipboard (⌘V) to import it, drag-drop still works
 - Tools: pencil / eraser / eyedropper / fill (selection-aware, symmetry-seeded), line / rect / ellipse with live preview, Bayer dither brushes, x/y/quad mirror, tiling preview
 - Selection: rect marquee + lasso, move-float lifecycle, cut/copy/paste — all undoable
 - Animation: timeline with per-frame durations, playback with tag ranges (loop/pingpong/hold), onion skin, drag-reorder frames

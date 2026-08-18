@@ -28,8 +28,12 @@ import { EllipseTool } from '../tools/ellipse';
 import { SelectRectTool } from '../tools/select-rect';
 import { LassoTool } from '../tools/lasso';
 import { MoveTool } from '../tools/move';
+import { ResizeCanvas } from '../core/commands/resize';
 import { Shell } from '../ui/shell';
 import { icon } from '../ui/icons';
+import { confirmModal } from '../ui/modal';
+import { mountFirstRunCard, welcomeLine } from '../ui/welcome';
+import { docFromChoice, openNewDocModal, openResizeModal } from '../ui/panels/newdoc';
 import { Shortcuts } from '../ui/shortcuts';
 import { ToolbarPanel } from '../ui/panels/toolbar';
 import { ColorPanel } from '../ui/panels/color';
@@ -39,7 +43,7 @@ import { HistoryPanel } from '../ui/panels/history';
 import { StatusBar } from '../ui/panels/status';
 import { TimelinePanel } from '../ui/panels/timeline';
 import { Autosave } from '../io/autosave';
-import { installDragDrop, openFilePicker, type DecodedImage } from '../io/import';
+import { installDragDrop, installPaste, openFilePicker, type DecodedImage } from '../io/import';
 import { downloadBlob, exportPng } from '../io/exporters/png';
 import { downloadText } from '../io/palettes';
 import { exportSheet, sheetFileName } from '../io/exporters/sheet';
@@ -164,6 +168,25 @@ export class App {
     });
     viewport.mount();
     this.teardown.push(() => viewport.unmount());
+
+    // ResizeCanvas (and its undo/redo) changes doc dims via a plain 'all'
+    // commit — the compositor and viewport must re-seat at the new size.
+    // Hooked on the bus so commit, undo, and redo all take the same route;
+    // 'all' also fires for SwapColors etc., hence the dims check. Safe order:
+    // viewport's own doc:changed handler only marks dirty — rendering is
+    // rAF-deferred, so the realloc below lands before any paint.
+    let docDims = { w: doc.width, h: doc.height };
+    this.teardown.push(bus.on('doc:changed', ({ scope }) => {
+      if (scope.kind !== 'all') return;
+      const d = editor.doc;
+      if (d.width === docDims.w && d.height === docDims.h) return;
+      docDims = { w: d.width, h: d.height };
+      compositor.setDoc(d);
+      viewport.setDocSize(d.width, d.height);
+    }));
+    this.teardown.push(bus.on('doc:replaced', () => {
+      docDims = { w: editor.doc.width, h: editor.doc.height };
+    }));
 
     const undo = (): void => { if (history.canUndo) history.undo(); };
     const redo = (): void => { if (history.canRedo) history.redo(); };
@@ -290,6 +313,16 @@ export class App {
       bus,
       getZoom: () => camera.zoom,
       getDocSize: () => ({ w: editor.doc.width, h: editor.doc.height }),
+      onSizeClick: () =>
+        openResizeModal({
+          width: editor.doc.width,
+          height: editor.doc.height,
+          onResize: (w, h, anchor) => {
+            editor.cancelOrDismiss(); // anchor a live float (undoable)
+            editor.cancelOrDismiss(); // then drop the selection — both doc-sized
+            history.commit(new ResizeCanvas(w, h, anchor));
+          },
+        }),
     });
     statusBar.mount();
     this.teardown.push(() => statusBar.unmount());
@@ -429,8 +462,21 @@ export class App {
     };
     addAction('sl-act-new', 'new', () => {
       const dirty = history.canUndo || history.canRedo || docHasPixels();
-      if (dirty && !window.confirm('Discard the current sprite?')) return;
-      adopt(SpriteDoc.blank(32, 32, 'untitled'));
+      const proceed = dirty
+        ? confirmModal({
+            title: 'new sprite',
+            body: 'discard the current sprite?',
+            confirmLabel: 'discard',
+            danger: true,
+          })
+        : Promise.resolve(true);
+      void proceed.then((ok) => {
+        if (!ok) return;
+        openNewDocModal({
+          currentPalette: () => [...editor.doc.palette.colors],
+          onCreate: (c) => adopt(docFromChoice(c, editor.doc.palette.colors)),
+        });
+      });
     });
     addAction('sl-act-open', 'open', () => openFilePicker(openImage, adopt, status));
     const exportPngFrame = (): void => {
@@ -544,6 +590,14 @@ export class App {
     addAction('sl-act-theme', 'theme', toggleTheme);
 
     this.teardown.push(installDragDrop(openImage, adopt, status));
+    // System-clipboard paste imports like drag-drop — but an in-app pixel copy
+    // owns cmd+v (the editor.paste() shortcut fires on the same keystroke; a
+    // stale OS screenshot must never clobber a deliberate internal paste).
+    this.teardown.push(installPaste(
+      (img) => { if (!editor.hasClipboard) openImage(img); },
+      (next) => { if (!editor.hasClipboard) adopt(next); },
+      status,
+    ));
 
     const autosave = new Autosave(bus, () => editor.doc);
     autosave.start();
@@ -672,6 +726,9 @@ export class App {
         delete (window as unknown as { __lab?: object }).__lab;
       });
     }
+
+    bus.emit('status:message', { text: welcomeLine() });
+    if (firstRun) mountFirstRunCard(() => {});
   }
 
   /** 'export' topbar button (caret glyph) + anchored dropdown — every export
