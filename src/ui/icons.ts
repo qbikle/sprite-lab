@@ -8,7 +8,8 @@
  *   (cut single corner pixels on large shapes for the soft-retro look).
  * - Paired icons are DERIVED, never redrawn: undo/redo mirror, frame-prev/next
  *   mirror, step-up/down flip, layer-up/down flip, sym-x/sym-y transpose,
- *   caret-right/caret-down transpose. Play/pause share optical height.
+ *   caret-right/caret-down transpose, flip-x/flip-y transpose. Play/pause
+ *   share optical height.
  * - Rendered via currentColor + crisp edges; scale ONLY via the size argument
  *   (CSS must never stretch an icon).
  */
@@ -25,7 +26,8 @@ export type IconName =
   | 'plus'
   | 'eye' | 'eye-off' | 'layer-up' | 'layer-down' | 'merge'
   | 'swap-arrows' | 'edit' | 'ramp' | 'save' | 'load'
-  | 'caret-right' | 'caret-down' | 'arrow-right' | 'rescan';
+  | 'caret-right' | 'caret-down' | 'arrow-right' | 'rescan'
+  | 'flip-x' | 'flip-y' | 'rotate-cw';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -146,6 +148,28 @@ const LAYER_UP: Rows = [
   '................',
   '..############..',
   '..############..',
+  '................',
+  '................',
+];
+
+/** Flip horizontal: dashed vertical axis, solid triangles pointing outward.
+ *  (Reads as the ACTION cousin of sym-x, whose axis is solid and whose
+ *  triangles point inward.) flip-y is the transpose. */
+const FLIP_X: Rows = [
+  '................',
+  '................',
+  '.......##.......',
+  '.......##.......',
+  '.....#....#.....',
+  '....##.##.##....',
+  '...###.##.###...',
+  '..####....####..',
+  '..####.##.####..',
+  '...###.##.###...',
+  '....##....##....',
+  '.....#.##.#.....',
+  '.......##.......',
+  '................',
   '................',
   '................',
 ];
@@ -424,6 +448,26 @@ const GLYPHS: Record<IconName, Rows> = {
     '..##..##..##....',
     '....##..##..##..',
     '....##..##..##..',
+    '................',
+    '................',
+  ],
+  'flip-x': FLIP_X,
+  'flip-y': transpose(FLIP_X),
+  'rotate-cw': [
+    '................',
+    '................',
+    '................',
+    '....########....',
+    '...##########...',
+    '...##......##...',
+    '...##......##...',
+    '...##....######.',
+    '...##.....####..',
+    '...##......##...',
+    '...##...........',
+    '...##...........',
+    '................',
+    '................',
     '................',
     '................',
   ],

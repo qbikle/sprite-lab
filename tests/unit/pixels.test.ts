@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   clampRect, copyRect, diffBounds, hexToRgba, makeBuffer,
-  overRgba, overRgbaScaled, packRgba, pasteRect, rgbaToHex, unpackRgba,
+  overRgba, overRgbaScaled, packRgba, pasteRect, rgbaToHex, unpackRgba, upscaleNearest,
 } from '../../src/core/pixels';
 
 describe('packRgba / unpackRgba', () => {
@@ -128,6 +128,60 @@ describe('copyRect / pasteRect', () => {
     scratch[12] = 999;
     pasteRect(scratch, 5, rect, patch);
     expect(Array.from(scratch)).toEqual(Array.from(src));
+  });
+});
+
+describe('upscaleNearest', () => {
+  it('factor 1 returns an equal but distinct copy', () => {
+    const src = Uint32Array.from([1, 2, 3, 4, 5, 6]);
+    const out = upscaleNearest(src, 3, 2, 1);
+    expect(out).not.toBe(src);
+    expect(Array.from(out)).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+
+  it('factor 3 block-replicates every pixel', () => {
+    const src = Uint32Array.from([1, 2, 3, 4]); // 2×2
+    const out = upscaleNearest(src, 2, 2, 3); // 6×6
+    expect(Array.from(out)).toEqual([
+      1, 1, 1, 2, 2, 2,
+      1, 1, 1, 2, 2, 2,
+      1, 1, 1, 2, 2, 2,
+      3, 3, 3, 4, 4, 4,
+      3, 3, 3, 4, 4, 4,
+      3, 3, 3, 4, 4, 4,
+    ]);
+  });
+
+  it('output size is exactly (w·f)×(h·f), non-square included', () => {
+    expect(upscaleNearest(makeBuffer(3, 2), 3, 2, 2).length).toBe(6 * 4);
+    expect(upscaleNearest(makeBuffer(1, 1), 1, 1, 16).length).toBe(256);
+    expect(upscaleNearest(makeBuffer(5, 7), 5, 7, 4).length).toBe(20 * 28);
+  });
+
+  it('reading back every f-th sample round-trips to the source', () => {
+    const src = makeBuffer(4, 3);
+    for (let i = 0; i < src.length; i++) src[i] = (i + 1) * 17;
+    const f = 5;
+    const out = upscaleNearest(src, 4, 3, f);
+    for (let y = 0; y < 3; y++) {
+      for (let x = 0; x < 4; x++) {
+        expect(out[y * f * 4 * f + x * f]).toBe(src[y * 4 + x]);
+      }
+    }
+  });
+
+  it('never mutates the source', () => {
+    const src = Uint32Array.from([9, 8, 7, 6]);
+    upscaleNearest(src, 2, 2, 4);
+    expect(Array.from(src)).toEqual([9, 8, 7, 6]);
+  });
+
+  it('throws on non-integer or sub-1 factors and on a size mismatch', () => {
+    const src = makeBuffer(2, 2);
+    expect(() => upscaleNearest(src, 2, 2, 0)).toThrow(RangeError);
+    expect(() => upscaleNearest(src, 2, 2, 1.5)).toThrow(RangeError);
+    expect(() => upscaleNearest(src, 2, 2, -2)).toThrow(RangeError);
+    expect(() => upscaleNearest(src, 3, 2, 2)).toThrow(RangeError);
   });
 });
 

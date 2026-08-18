@@ -99,9 +99,12 @@ test('coat swap remaps every frame in ONE undo step', async ({ page }) => {
 
 test('edit mode replaces and removes swatches undoably', async ({ page }) => {
   const n0 = await paletteLen(page);
-  await setHex(page, '#123456');
   await page.locator('.sl-head-btn[title^="edit palette"]').click();
-  await page.locator('.sl-swatches .sl-sw').nth(1).click(); // first real swatch → replace
+  // wave 10: swatch click routes through the color picker (seeded with it)
+  await page.locator('.sl-swatches .sl-sw').nth(1).click();
+  await page.locator('.sl-picker-hex').fill('#123456');
+  await page.locator('.sl-picker-hex').press('Enter'); // commit + confirm
+  await expect(page.locator('.sl-modal-card.sl-picker')).toHaveCount(0);
   let ls = await labels(page);
   expect(ls[ls.length - 1]).toBe('edit swatch');
 

@@ -124,6 +124,8 @@ function routeEnter(root: HTMLElement, submit: () => void): void {
 export function openNewDocModal(opts: {
   currentPalette: () => number[];
   onCreate: (c: NewDocChoice) => void;
+  /** When present, a quiet footer link offers the demo sprite instead. */
+  onDemo?: () => void;
 }): void {
   const modal = new Modal({ label: 'new sprite', className: 'sl-newdoc' });
 
@@ -279,6 +281,17 @@ export function openNewDocModal(opts: {
   sizeWrap.append(sizeCaption, sizeRow('sl-newdoc-size', 'sl-newdoc-x', w, h));
 
   modal.root.append(title, presets, sizeWrap, nameLabel, palRow, bgRow, actions);
+  const onDemo = opts.onDemo;
+  if (onDemo) {
+    const foot = div('sl-newdoc-foot');
+    const demo = button('sl-newdoc-demo', 'or open mochi, the demo cat');
+    demo.addEventListener('click', () => {
+      modal.close();
+      onDemo();
+    });
+    foot.appendChild(demo);
+    modal.root.appendChild(foot);
+  }
   modal.open();
   syncChips();
   w.input.select();

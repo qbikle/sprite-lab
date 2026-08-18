@@ -587,6 +587,49 @@ textarea,
   color: var(--panel);
 }
 
+/* ── ramp stepper (wave 10) ─────────────────────────────── */
+
+/* readout + stacked ±1 chevrons, glued to the ramp head button */
+.sl-ramp-step {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+}
+
+.sl-ramp-n {
+  min-width: 8px;
+  text-align: center;
+  font-size: var(--fs-small);
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.sl-ramp-stepcol {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+/* 16x10 halves stack to the 20px head-row height; the centered 16px svg
+ * overhangs 3px top/bottom — clip it (timeline onion-stepper idiom) */
+.sl-shell .sl-ramp-stepbtn {
+  width: 16px;
+  height: 10px;
+  padding: 0;
+  border-width: 1px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  overflow: hidden;
+  color: var(--dim);
+}
+
+.sl-shell .sl-ramp-stepbtn:hover:not(:disabled) {
+  color: var(--text);
+}
+
 /* ── palette edit mode ──────────────────────────────────── */
 
 .sl-swatches.editing .sl-sw:not(.sl-sw-clear):not(.sl-sw-add) {
@@ -2137,4 +2180,381 @@ textarea,
 .sl-status-size-btn:hover,
 .sl-status-size-btn:focus-visible {
   color: var(--accent);
+}
+
+/* ===== wave 10: picker ===== */
+
+/* Color picker dialog (ui/picker.ts). Rides the shared .sl-modal-* skin;
+   canvases are dpr-sized in TS — CSS only frames them. Tokens only, both
+   themes by construction. */
+
+.sl-modal-card.sl-picker {
+  min-width: 0;
+  width: min(252px, 92vw);
+}
+
+.sl-picker-sv,
+.sl-picker-strip {
+  display: block;
+  max-width: 100%;
+  border: 2px solid var(--border);
+  touch-action: none;
+  margin-bottom: var(--sp-2);
+}
+
+.sl-picker-sv {
+  cursor: crosshair;
+}
+
+.sl-picker-strip {
+  cursor: ew-resize;
+}
+
+.sl-picker-sv:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.sl-picker-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: var(--sp-1) 0 var(--sp-3);
+}
+
+/* joined before|after pair reads as one old→new diff chip */
+.sl-picker-chips {
+  display: flex;
+  flex: none;
+}
+
+.sl-picker-chip {
+  position: relative;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 2px solid var(--border);
+  background-image: repeating-conic-gradient(var(--checker-a) 0% 25%, var(--checker-b) 0% 50%);
+  background-size: 8px 8px;
+  flex: none;
+}
+
+.sl-picker-chip + .sl-picker-chip {
+  border-left-width: 0;
+}
+
+.sl-picker-before {
+  cursor: pointer;
+}
+
+.sl-picker-fill {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* hex input: modal lives outside .sl-shell — base input skin re-scoped here
+   (mirrors .sl-shell input), shake + focus match the panel .sl-hex idiom */
+.sl-picker-hex {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  padding: 3px 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sl-picker-hex:focus {
+  border-color: var(--accent-2);
+  outline: none;
+}
+
+.sl-picker-hex.sl-shake {
+  animation: sl-shake 0.25s;
+  border-color: var(--danger);
+}
+
+.sl-picker-eye {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+
+/* main color chip is a real button now (click opens the picker) — keep the
+   chip box identical; the base button skin hides under the opaque fill */
+.sl-shell button.sl-chip-main {
+  padding: 0;
+}
+
+/* ===== wave 10: export modal (merged from docs/drafts) ===== */
+/* ═══ wave 10 draft — export modal (ui/panels/exportmodal.ts) ═══
+   Agent E draft for the app.css owner to merge. Tokens only; rides the shared
+   .sl-modal-* skin (card padding, button base, focus rings, actions row) so
+   both themes come from the token sheet. Also: the quiet demo footer link the
+   new-doc modal grew this wave (.sl-newdoc-foot / .sl-newdoc-demo). */
+
+.sl-modal-card.sl-export {
+  width: 440px;
+}
+
+/* ── format cards: 3×2 roving-tabindex grid ─────────────── */
+
+.sl-export-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+}
+
+.sl-export-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: var(--sp-2);
+  text-align: left;
+  min-height: 46px;
+}
+
+.sl-export-card-label {
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.sl-export-card-note {
+  color: var(--dim);
+  font-size: var(--fs-small);
+}
+
+.sl-export-card.active {
+  border-color: var(--accent);
+  background: var(--panel);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.sl-export-card.active .sl-export-card-label {
+  color: var(--accent);
+}
+
+/* disabled card (webp off-family): keep the hint legible, not ghosted away */
+.sl-export-card:disabled {
+  opacity: 0.55;
+}
+
+/* ── manifest: the exact files that will download ───────── */
+
+.sl-export-manifest {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+}
+
+.sl-export-caption {
+  color: var(--dim);
+  font-size: var(--fs-small);
+  letter-spacing: 0.06em;
+}
+
+.sl-export-files {
+  font: inherit;
+  font-size: var(--fs-small);
+  color: var(--text);
+  background: var(--bg);
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  padding: 3px 8px;
+  overflow-wrap: anywhere;
+}
+
+/* ── scale row: chips + custom factor, live dims on their own line ── */
+
+.sl-export-scale {
+  display: grid;
+  grid-template-columns: 88px auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--sp-1) var(--sp-2);
+  margin-bottom: var(--sp-3);
+}
+
+.sl-export-scale[hidden] {
+  display: none; /* author display beats the UA [hidden] rule — gotcha ledger */
+}
+
+.sl-export-chips {
+  grid-column: 2;
+  display: flex;
+  gap: var(--sp-1);
+}
+
+.sl-export-chip {
+  min-width: 34px;
+  padding: 3px 0;
+  font-size: var(--fs-small);
+  font-variant-numeric: tabular-nums;
+}
+
+.sl-export-chip.active {
+  background: var(--accent);
+  color: var(--panel);
+  font-weight: 700;
+}
+
+.sl-export-custom {
+  grid-column: 3;
+  justify-self: start;
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  padding: 3px 8px;
+  width: 56px;
+  font-variant-numeric: tabular-nums;
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+.sl-export-custom::-webkit-outer-spin-button,
+.sl-export-custom::-webkit-inner-spin-button {
+  appearance: none;
+  margin: 0;
+}
+
+.sl-export-custom:focus {
+  border-color: var(--accent-2);
+  outline: none;
+}
+
+.sl-export-custom.sl-shake {
+  animation: sl-shake 0.25s;
+  border-color: var(--danger);
+}
+
+/* the readout gets its own full-width line — cap notes run long */
+.sl-export-dims {
+  grid-column: 2 / -1;
+  grid-row: 2;
+  color: var(--dim);
+  font-size: var(--fs-small);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+}
+
+.sl-export .sl-modal-actions {
+  margin-top: var(--sp-2);
+}
+
+/* ── new-doc modal: quiet demo footer link ──────────────── */
+
+.sl-newdoc-foot {
+  margin-top: var(--sp-3);
+  text-align: center;
+}
+
+.sl-newdoc-demo {
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  color: var(--dim);
+  font-size: var(--fs-small);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.sl-newdoc-demo:hover:not(:disabled) {
+  color: var(--accent);
+  filter: none;
+}
+
+/* ===== wave 10: preview + transforms (merged from docs/drafts) ===== */
+/* ═══ wave 10 draft — live preview panel + toolbar transform cluster ═══
+   Agent V draft for the app.css owner to merge. Tokens only — both themes come
+   from the token sheet. Two blocks:
+   1. .sl-preview*  — collapsible always-looping playback tile, TOP of .sl-side
+      (panel prepends itself). Canvas is sized by the panel to an integer
+      device-pixel scale; the checker lives in CSS so transparency reads and
+      re-themes for free.
+   2. .sl-xform*    — flip-x / flip-y / rotate-cw mini buttons riding the
+      toolbar's mode cluster (rendered only when app.ts passes the handlers). */
+
+/* ── live preview panel ─────────────────────────────────── */
+
+.sl-preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.sl-preview-head {
+  cursor: pointer;
+}
+
+.sl-preview-caret {
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  color: var(--dim);
+}
+
+.sl-preview-body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  max-height: 128px;
+}
+
+/* transparent = the canvas checker (same recipe as the viewport) */
+.sl-preview-canvas {
+  display: block;
+  image-rendering: pixelated;
+  background-image: repeating-conic-gradient(var(--checker-a) 0% 25%, var(--checker-b) 0% 50%);
+  background-size: 12px 12px;
+  border: 1px solid var(--border);
+}
+
+/* ── toolbar transform cluster (flip-x / flip-y / rotate) ──
+   Compact 2×2 mini grid (20px boxes, 16px icons — the layers-head sizing):
+   the derived flip pair side by side, rotate centered under them. The rail
+   already overflows its 900px-viewport height by ~10px, so every added px
+   here costs undo/redo visibility — hence minis, not 28px mode tiles. */
+
+.sl-xform {
+  display: grid;
+  grid-template-columns: repeat(2, 20px);
+  gap: var(--sp-1);
+  justify-content: center;
+  margin-top: var(--sp-1);
+}
+
+.sl-xform-btn {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--dim);
+}
+
+.sl-shell .sl-xform-btn:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.sl-xform-btn.sl-rotate-cw {
+  grid-column: 1 / -1;
+  justify-self: center;
 }

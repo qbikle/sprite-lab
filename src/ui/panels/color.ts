@@ -5,6 +5,7 @@ import { hexToRgba, rgbaToHex } from '../../core/pixels';
 import { makeRamp } from '../../core/ramps';
 import { downloadText, openPaletteFile, paletteToGpl } from '../../io/palettes';
 import { icon, type IconName } from '../icons';
+import { openColorPicker } from '../picker';
 
 export interface ColorPanelOpts {
   host: HTMLElement;
@@ -57,6 +58,7 @@ export class ColorPanel {
   private editBtn: HTMLButtonElement | null = null;
   private editMode = false;
   private editHintShown = false;
+  private rampSteps = 5;
   private cur: Rgba = 0;
   private prev: Rgba = 0;
 
@@ -72,11 +74,19 @@ export class ColorPanel {
     const root = div('sl-color');
 
     const chips = div('sl-color-chips');
-    const main = div('sl-chip sl-chip-main');
-    main.title = 'current color';
+    const main = document.createElement('button');
+    main.type = 'button';
+    main.className = 'sl-chip sl-chip-main';
+    main.title = 'current color — click to pick';
     const mainFill = document.createElement('span');
     mainFill.className = 'sl-chip-fill';
     main.appendChild(mainFill);
+    main.addEventListener('click', () => {
+      openColorPicker({
+        initial: o.getColor(),
+        onPick: (c) => o.setColor(c),
+      });
+    });
     const prev = div('sl-chip sl-chip-prev');
     prev.title = 'previous color';
     const prevFill = document.createElement('span');
@@ -115,24 +125,27 @@ export class ColorPanel {
     const palTitle = document.createElement('span');
     palTitle.textContent = 'palette';
     const palLine = div('sl-head-line');
-    const editBtn = headBtn('edit', 'edit palette: click = replace with current, alt-click = remove');
+    const editBtn = headBtn('edit', 'edit palette: click = edit swatch, alt-click = remove');
+    editBtn.classList.add('sl-edit-btn');
     editBtn.addEventListener('click', () => this.toggleEdit());
-    const rampBtn = headBtn('ramp', 'add a 5-step ramp from the current color');
+    const rampBtn = headBtn('ramp', `add a ${this.rampSteps}-step ramp from the current color`);
+    rampBtn.classList.add('sl-ramp-btn');
     rampBtn.addEventListener('click', () => {
       const base = o.getColor();
       if (base === 0) {
         o.bus.emit('status:message', { text: 'pick a color first — ramps need a base' });
         return;
       }
-      o.addRamp(makeRamp(base, 5));
+      o.addRamp(makeRamp(base, this.rampSteps));
     });
+    const stepper = this.rampStepper(rampBtn);
     const saveBtn = headBtn('save', 'save palette (.gpl)');
     saveBtn.addEventListener('click', () => this.savePalette());
     const loadBtn = headBtn('load', 'load palette (.gpl / .json)');
     loadBtn.addEventListener('click', () => {
       openPaletteFile((name, colors) => o.setPalette(name, colors));
     });
-    palHead.append(palTitle, palLine, editBtn, rampBtn, saveBtn, loadBtn);
+    palHead.append(palTitle, palLine, editBtn, rampBtn, stepper, saveBtn, loadBtn);
     const palGrid = div('sl-swatches');
     const recHead = div('sl-panel-head');
     recHead.textContent = 'recent';
@@ -202,16 +215,19 @@ export class ColorPanel {
       add.type = 'button';
       add.className = 'sl-sw sl-sw-add';
       add.textContent = '+';
-      add.title = 'add current color';
+      add.title = 'add a color';
       add.addEventListener('click', () => {
-        const c = this.opts.getColor();
-        if (c === 0) {
-          this.opts.bus.emit('status:message', {
-            text: 'pick a color first — transparent is not a swatch',
-          });
-          return;
-        }
-        this.opts.addColor(c);
+        openColorPicker({
+          initial: this.opts.getColor(),
+          title: 'add to palette',
+          onPick: (c) => {
+            if (c === 0) {
+              this.opts.bus.emit('status:message', { text: 'transparent is not a swatch' });
+              return;
+            }
+            this.opts.addColor(c);
+          },
+        });
       });
       grid.appendChild(add);
     }
@@ -231,10 +247,11 @@ export class ColorPanel {
     btn.className = c === 0 ? 'sl-sw sl-sw-clear' : 'sl-sw';
     const editable = this.editMode && palIndex !== undefined;
     btn.title = editable
-      ? `${rgbaToHex(c)} — click: replace with current, alt-click: remove`
+      ? `${rgbaToHex(c)} — click: edit, alt-click: remove`
       : title ?? rgbaToHex(c);
     if (active) btn.classList.add('active');
     if (c !== 0) {
+      btn.dataset['color'] = rgbaToHex(c);
       const fill = document.createElement('span');
       fill.className = 'sl-sw-fill';
       fill.style.background = rgbaToHex(c);
@@ -246,19 +263,59 @@ export class ColorPanel {
           this.opts.removeColor(palIndex);
           return;
         }
-        const cur = this.opts.getColor();
-        if (cur === 0) {
-          this.opts.bus.emit('status:message', {
-            text: 'current color is transparent — pick a color to replace with',
-          });
-          return;
-        }
-        this.opts.replaceColor(palIndex, cur);
+        openColorPicker({
+          initial: c,
+          title: 'edit swatch',
+          onPick: (nc) => {
+            if (nc === 0) {
+              this.opts.bus.emit('status:message', {
+                text: 'transparent is not a swatch — alt-click removes',
+              });
+              return;
+            }
+            this.opts.replaceColor(palIndex, nc);
+          },
+        });
         return;
       }
       this.opts.setColor(c);
     });
     return btn;
+  }
+
+  /** Compact ramp-length stepper (3..9): readout + stacked ±1 chevrons,
+   *  the timeline onion-stepper pattern. Keeps the ramp button's title in
+   *  sync so the tooltip always names the real step count. */
+  private rampStepper(rampBtn: HTMLButtonElement): HTMLElement {
+    const wrap = div('sl-ramp-step');
+    wrap.title = 'ramp steps (3–9)';
+    const num = document.createElement('span');
+    num.className = 'sl-ramp-n';
+    const col = div('sl-ramp-stepcol');
+    const mk = (d: 1 | -1): HTMLButtonElement => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'sl-ramp-stepbtn';
+      btn.title = `ramp steps ${d > 0 ? '+1' : '-1'}`;
+      btn.appendChild(icon(d > 0 ? 'step-up' : 'step-down'));
+      btn.addEventListener('click', () => {
+        this.rampSteps = Math.max(3, Math.min(9, this.rampSteps + d));
+        syncStep();
+      });
+      return btn;
+    };
+    const up = mk(1);
+    const down = mk(-1);
+    const syncStep = (): void => {
+      num.textContent = String(this.rampSteps);
+      up.disabled = this.rampSteps >= 9;
+      down.disabled = this.rampSteps <= 3;
+      rampBtn.title = `add a ${this.rampSteps}-step ramp from the current color`;
+    };
+    syncStep();
+    col.append(up, down);
+    wrap.append(num, col);
+    return wrap;
   }
 
   private toggleEdit(): void {
@@ -267,7 +324,7 @@ export class ColorPanel {
     if (this.editMode && !this.editHintShown) {
       this.editHintShown = true;
       this.opts.bus.emit('status:message', {
-        text: 'edit palette: click = replace with current, alt-click = remove',
+        text: 'edit palette: click = edit swatch, alt-click = remove',
       });
     }
     this.refresh();

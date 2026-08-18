@@ -66,6 +66,18 @@ describe('packSheetLayout', () => {
 });
 
 describe('buildSheetJson', () => {
+  it('scales frameW/frameH with the PNG, sheet name unchanged', () => {
+    const doc = docWithFrames([100, 100]);
+    const layout = packSheetLayout(doc);
+    const scaled = JSON.parse(buildSheetJson(doc, layout, 4)) as V1Json;
+    expect(scaled.frameW).toBe(16);
+    expect(scaled.frameH).toBe(16);
+    expect(scaled.sheet).toBe(sheetFileName('cat'));
+    const plain = JSON.parse(buildSheetJson(doc, layout)) as V1Json;
+    expect(plain.frameW).toBe(4);
+    expect(plain.rows).toEqual(scaled.rows);
+  });
+
   it('matches the v1 key shape exactly', () => {
     const doc = docWithFrames([100, 125, 200, 50]);
     doc.tags.push(

@@ -210,3 +210,17 @@ never touch the doc, the canvas, or the DOM directly.
   above): plain wheel pans both axes, ctrl/cmd+wheel zooms smoothly to cursor —
   discrete stops remain on keyboard +/-/0; `ui/welcome.ts` (welcomeLine pool +
   mountFirstRunCard).
+- Wave 10 additions: `ui/picker.ts` (`openColorPicker`, HSVA state, exported
+  HSV↔RGB math) — palette `+`/edit-replace/main-chip flow through it;
+  `pixels.upscaleNearest` is THE nearest-neighbor upscaler (png/sheet exporters
+  take an optional `scale`; gif/webp frames are pre-scaled before the worker —
+  protocol untouched, dims are params); export UI is `ui/panels/exportmodal.ts`
+  (`openExportModal` + `ExportRunners`), the dropdown menu is deleted, last
+  format+scale persisted at `sprite-lab:v2:export`; `ui/panels/preview.ts`
+  (PreviewPanel, DEDICATED Compositor instance, own duration-driven loop, never
+  emits `playback:changed`, collapse at `sprite-lab:v2:preview`);
+  `core/commands/transform.ts` (`FlipFrameX`/`FlipFrameY` frame-scoped,
+  `Rotate90CW` doc-wide via `setSize` riding the wave-9 dims resync);
+  ToolbarPanel opts gained optional `onFlipX/onFlipY/onRotate`;
+  `openNewDocModal` gained optional `onDemo` (demo entry lives in its footer);
+  icons + `flip-x`/`flip-y` (derived) and `rotate-cw` (47 glyphs).

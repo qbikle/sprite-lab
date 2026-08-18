@@ -29,11 +29,15 @@ import { SelectRectTool } from '../tools/select-rect';
 import { LassoTool } from '../tools/lasso';
 import { MoveTool } from '../tools/move';
 import { ResizeCanvas } from '../core/commands/resize';
+import { FlipFrameX, FlipFrameY, Rotate90CW } from '../core/commands/transform';
+import { upscaleNearest } from '../core/pixels';
 import { Shell } from '../ui/shell';
-import { icon } from '../ui/icons';
+
 import { confirmModal } from '../ui/modal';
 import { mountFirstRunCard, welcomeLine } from '../ui/welcome';
 import { docFromChoice, openNewDocModal, openResizeModal } from '../ui/panels/newdoc';
+import { openExportModal } from '../ui/panels/exportmodal';
+import { PreviewPanel } from '../ui/panels/preview';
 import { Shortcuts } from '../ui/shortcuts';
 import { ToolbarPanel } from '../ui/panels/toolbar';
 import { ColorPanel } from '../ui/panels/color';
@@ -49,7 +53,7 @@ import { downloadText } from '../io/palettes';
 import { exportSheet, sheetFileName } from '../io/exporters/sheet';
 import { canEncodeWebp } from '../io/exporters/webp';
 import { framePxMap } from '../io/exporters/pxmap';
-import { docToSpriteFile, openSpritePicker, spriteFileName } from '../io/project';
+import { docToSpriteFile, spriteFileName } from '../io/project';
 import { EncoderClient } from '../io/workers/protocol';
 import { SheetImporter } from '../ui/panels/importer';
 import { EditorState } from './editor';
@@ -206,6 +210,19 @@ export class App {
       onDither: () => editor.cycleDither(),
       onUndo: undo,
       onRedo: redo,
+      onFlipX: () => {
+        if (editor.float) editor.cancelOrDismiss(); // anchor float so its pixels flip too
+        history.commit(new FlipFrameX(editor.activeFrame));
+      },
+      onFlipY: () => {
+        if (editor.float) editor.cancelOrDismiss();
+        history.commit(new FlipFrameY(editor.activeFrame));
+      },
+      onRotate: () => {
+        editor.cancelOrDismiss(); // anchor a live float (undoable)
+        editor.cancelOrDismiss(); // then drop the selection — both doc-sized
+        history.commit(new Rotate90CW());
+      },
     });
     toolbar.mount();
     this.teardown.push(() => toolbar.unmount());
@@ -400,6 +417,18 @@ export class App {
     timeline.mount();
     this.teardown.push(() => timeline.unmount());
 
+    // Preview owns a DEDICATED compositor — sharing the viewport's would
+    // thrash its single-frame composite cache every preview tick.
+    const preview = new PreviewPanel({
+      host: slots.side,
+      bus,
+      compositor: new Compositor(doc),
+      getDoc: () => editor.doc,
+      getRange: () => activeTagRef,
+    });
+    preview.mount();
+    this.teardown.push(() => preview.unmount());
+
     const adopt = (next: SpriteDoc): void => {
       player.pause();
       setRangeFromTag(null);
@@ -475,19 +504,24 @@ export class App {
         openNewDocModal({
           currentPalette: () => [...editor.doc.palette.colors],
           onCreate: (c) => adopt(docFromChoice(c, editor.doc.palette.colors)),
+          onDemo: () => {
+            const demo = demoDoc();
+            if (demo) adopt(demo);
+            else status('demo sprite unavailable');
+          },
         });
       });
     });
     addAction('sl-act-open', 'open', () => openFilePicker(openImage, adopt, status));
-    const exportPngFrame = (): void => {
-      void exportPng(editor.doc, editor.activeFrame)
+    const exportPngFrame = (scale = 1): void => {
+      void exportPng(editor.doc, editor.activeFrame, scale)
         .then((blob) => downloadBlob(blob, `${editor.doc.meta.name}.png`))
         .catch(() => status('png export failed'));
     };
 
-    const exportSheetJson = (): void => {
+    const exportSheetJson = (scale = 1): void => {
       const name = editor.doc.meta.name;
-      void exportSheet(editor.doc)
+      void exportSheet(editor.doc, scale)
         .then(({ png, json }) => {
           downloadBlob(png, sheetFileName(name));
           downloadText(json, `${name}.sheet.json`);
@@ -495,20 +529,22 @@ export class App {
         .catch(() => status('sheet export failed'));
     };
 
-    // Flatten a frame into a fresh, transferable ArrayBuffer for the worker.
-    const framePayload = (i: number): { pixels: ArrayBuffer; durationMs: number } => {
+    // Flatten a frame (pre-upscaled for the worker — protocol dims are params).
+    const framePayload = (i: number, scale: number): { pixels: ArrayBuffer; durationMs: number } => {
       const flat = editor.doc.flattenFrame(i);
-      const pixels = new ArrayBuffer(flat.byteLength);
-      new Uint32Array(pixels).set(flat);
+      const scaled = scale === 1 ? flat
+        : upscaleNearest(flat, editor.doc.width, editor.doc.height, scale);
+      const pixels = new ArrayBuffer(scaled.byteLength);
+      new Uint32Array(pixels).set(scaled);
       return { pixels, durationMs: editor.doc.frames[i]?.durationMs ?? 100 };
     };
 
-    const exportGif = (): void => {
+    const exportGif = (scale = 1): void => {
       const d = editor.doc;
-      const frames = d.frames.map((_, i) => framePayload(i));
+      const frames = d.frames.map((_, i) => framePayload(i, scale));
       void encoder
         .request(
-          { kind: 'gif', w: d.width, h: d.height, frames },
+          { kind: 'gif', w: d.width * scale, h: d.height * scale, frames },
           frames.map((f) => f.pixels),
           (done, total) => status(`encoding gif ${done}/${total}`),
         )
@@ -516,21 +552,24 @@ export class App {
         .catch(() => status('gif export failed'));
     };
 
-    const exportWebpAnim = async (): Promise<void> => {
+    const exportWebpAnim = async (scale = 1): Promise<void> => {
       if (!(await canEncodeWebp())) {
         status('animated webp needs a chromium browser — try gif');
         return;
       }
       const d = editor.doc;
+      const w = d.width * scale;
+      const h = d.height * scale;
       const total = d.frames.length;
       const frames: Array<{ payload: ArrayBuffer; durationMs: number }> = [];
       for (let i = 0; i < total; i++) {
         const flat = d.flattenFrame(i);
-        const canvas = new OffscreenCanvas(d.width, d.height);
+        const scaled = scale === 1 ? flat : upscaleNearest(flat, d.width, d.height, scale);
+        const canvas = new OffscreenCanvas(w, h);
         const ctx = canvas.getContext('2d');
         if (!ctx) throw new Error('Canvas 2D is unavailable in this browser.');
-        const img = ctx.createImageData(d.width, d.height);
-        img.data.set(new Uint8ClampedArray(flat.buffer, flat.byteOffset, flat.length * 4));
+        const img = ctx.createImageData(w, h);
+        img.data.set(new Uint8ClampedArray(scaled.buffer, scaled.byteOffset, scaled.length * 4));
         ctx.putImageData(img, 0, 0);
         // quality 1 → Chromium emits lossless VP8L; the default is lossy VP8
         const blob = await canvas.convertToBlob({ type: 'image/webp', quality: 1 });
@@ -538,7 +577,7 @@ export class App {
         status(`encoding webp ${i + 1}/${total}`);
       }
       const out = await encoder.request(
-        { kind: 'webp-mux', w: d.width, h: d.height, frames },
+        { kind: 'webp-mux', w, h, frames },
         frames.map((f) => f.payload),
       );
       downloadBlob(out, `${d.meta.name}.webp`);
@@ -563,30 +602,44 @@ export class App {
       }
     };
 
-    this.mountExportMenu(actionsHost, [
-      { label: 'png', cls: 'sl-act-export', run: exportPngFrame },
-      { label: 'sheet + json', run: exportSheetJson },
-      { label: 'gif', run: exportGif },
-      {
-        label: 'animated webp',
-        run: () => { void exportWebpAnim().catch(() => status('webp export failed')); },
-      },
-      { label: 'px map', run: exportPxSnippet },
-      {
-        label: 'save .sprite',
-        run: () => downloadBlob(docToSpriteFile(editor.doc), spriteFileName(editor.doc)),
-      },
-      { label: 'open .sprite', run: () => openSpritePicker(adopt, status) },
-      {
-        label: 'open demo',
-        cls: 'sl-act-demo',
-        run: () => {
-          const demo = demoDoc();
-          if (demo) adopt(demo);
-          else status('demo sprite unavailable');
+    const trigger = document.createElement('button');
+    trigger.type = 'button';
+    trigger.className = 'sl-act-more'; // class + label kept from the menu era
+    trigger.textContent = 'export';
+    trigger.setAttribute('aria-haspopup', 'dialog');
+    const openExport = (): void =>
+      openExportModal({
+        doc: () => editor.doc,
+        activeFrame: () => editor.activeFrame,
+        canWebp: canEncodeWebp,
+        run: {
+          png: ({ scale }) => exportPngFrame(scale),
+          sheet: ({ scale }) => exportSheetJson(scale),
+          gif: ({ scale }) => exportGif(scale),
+          webp: ({ scale }) => {
+            void exportWebpAnim(scale).catch(() => status('webp export failed'));
+          },
+          pxmap: exportPxSnippet,
+          sprite: () => downloadBlob(docToSpriteFile(editor.doc), spriteFileName(editor.doc)),
         },
-      },
-    ]);
+      });
+    trigger.addEventListener('click', openExport);
+    // The global Enter=play shortcut preventDefaults before the button's native
+    // activation — keyboard opening needs its own keys (menu-era Enter gotcha).
+    const onTriggerKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        e.stopPropagation();
+        openExport();
+      }
+    };
+    trigger.addEventListener('keydown', onTriggerKey);
+    actionsHost.appendChild(trigger);
+    this.teardown.push(() => {
+      trigger.removeEventListener('click', openExport);
+      trigger.removeEventListener('keydown', onTriggerKey);
+      trigger.remove();
+    });
     addAction('sl-act-theme', 'theme', toggleTheme);
 
     this.teardown.push(installDragDrop(openImage, adopt, status));
@@ -729,107 +782,6 @@ export class App {
 
     bus.emit('status:message', { text: welcomeLine() });
     if (firstRun) mountFirstRunCard(() => {});
-  }
-
-  /** 'export' topbar button (caret glyph) + anchored dropdown — every export
-   *  lives here, png first. Closes on outside click / Esc; ArrowUp/ArrowDown
-   *  walk the items. */
-  private mountExportMenu(
-    host: HTMLElement,
-    items: ReadonlyArray<{ label: string; cls?: string; run: () => void }>,
-  ): void {
-    const wrap = document.createElement('div');
-    wrap.className = 'sl-menu-anchor';
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'sl-act-more';
-    button.append('export', icon('caret-down'));
-    button.setAttribute('aria-haspopup', 'menu');
-    button.setAttribute('aria-expanded', 'false');
-    const menu = document.createElement('div');
-    menu.className = 'sl-menu';
-    menu.setAttribute('role', 'menu');
-    menu.hidden = true;
-
-    const buttons: HTMLButtonElement[] = [];
-    const close = (): void => {
-      if (menu.hidden) return;
-      menu.hidden = true;
-      button.setAttribute('aria-expanded', 'false');
-    };
-    const open = (): void => {
-      menu.hidden = false;
-      button.setAttribute('aria-expanded', 'true');
-      buttons[0]?.focus();
-    };
-
-    for (const { label, cls, run } of items) {
-      const item = document.createElement('button');
-      item.type = 'button';
-      item.className = cls ? `sl-menu-item ${cls}` : 'sl-menu-item';
-      item.setAttribute('role', 'menuitem');
-      item.textContent = label;
-      item.addEventListener('click', () => {
-        close();
-        button.focus();
-        run();
-      });
-      buttons.push(item);
-      menu.appendChild(item);
-    }
-
-    const onToggle = (): void => {
-      if (menu.hidden) open();
-      else close();
-    };
-    const onKeyDown = (e: KeyboardEvent): void => {
-      if (menu.hidden) {
-        if (e.key === 'ArrowDown' && document.activeElement === button) {
-          e.preventDefault();
-          open();
-        }
-        return;
-      }
-      const step = (dir: 1 | -1): void => {
-        const at = buttons.findIndex((b) => b === document.activeElement);
-        const next = at < 0
-          ? (dir === 1 ? 0 : buttons.length - 1)
-          : (at + dir + buttons.length) % buttons.length;
-        buttons[next]?.focus();
-      };
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        close();
-        button.focus();
-      } else if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        e.stopPropagation();
-        step(1);
-      } else if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        e.stopPropagation();
-        step(-1);
-      } else if (e.key === 'Enter' || e.key === ' ') {
-        // keep the global Enter=play/space=pan shortcuts out of item activation;
-        // the button's default click still fires
-        e.stopPropagation();
-      }
-    };
-    const onOutside = (e: PointerEvent): void => {
-      if (!(e.target instanceof Node) || !wrap.contains(e.target)) close();
-    };
-    button.addEventListener('click', onToggle);
-    wrap.addEventListener('keydown', onKeyDown);
-    document.addEventListener('pointerdown', onOutside);
-
-    wrap.append(button, menu);
-    host.appendChild(wrap);
-    this.teardown.push(() => {
-      button.removeEventListener('click', onToggle);
-      wrap.removeEventListener('keydown', onKeyDown);
-      document.removeEventListener('pointerdown', onOutside);
-      wrap.remove();
-    });
   }
 
   unmount(): void {

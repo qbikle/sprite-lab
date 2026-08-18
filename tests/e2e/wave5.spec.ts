@@ -75,7 +75,8 @@ test('sheet+json export matches the v1 shape', async ({ page }) => {
   await page.locator('.sl-act-more').click();
   const downloads: import('@playwright/test').Download[] = [];
   page.on('download', (d) => downloads.push(d));
-  await page.getByRole('menuitem', { name: /sheet/ }).click();
+  await page.locator('.sl-export-card-sheet').click();
+  await page.locator('.sl-export-run').click();
   await expect.poll(() => downloads.length, { timeout: 10_000 }).toBe(2);
   const [a, b] = downloads;
   const files = [a!, b!].map((d) => d.suggestedFilename()).sort();
@@ -99,7 +100,8 @@ test('gif export produces a real GIF89a', async ({ page }) => {
   await page.keyboard.press('Shift+n');
   await page.locator('.sl-act-more').click();
   const dl = page.waitForEvent('download');
-  await page.getByRole('menuitem', { name: /^gif$/ }).click();
+  await page.locator('.sl-export-card-gif').click();
+  await page.locator('.sl-export-run').click();
   const download = await dl;
   expect(download.suggestedFilename()).toBe('untitled.gif');
   const bytes = readFileSync(await download.path());
@@ -107,7 +109,7 @@ test('gif export produces a real GIF89a', async ({ page }) => {
   expect(bytes[bytes.length - 1]).toBe(0x3b);
 });
 
-test('.sprite round-trips through save and open', async ({ page }) => {
+test('.sprite round-trips through save and open', async ({ page }, testInfo) => {
   await page.keyboard.press('g');
   const box = await page.locator('.sl-canvas canvas').boundingBox();
   await page.mouse.click(box!.x + box!.width / 2, box!.y + box!.height / 2);
@@ -116,8 +118,11 @@ test('.sprite round-trips through save and open', async ({ page }) => {
 
   await page.locator('.sl-act-more').click();
   const dl = page.waitForEvent('download');
-  await page.getByRole('menuitem', { name: /save \.sprite/ }).click();
-  const file = await (await dl).path();
+  await page.locator('.sl-export-card-sprite').click();
+  await page.locator('.sl-export-run').click();
+  // the open picker routes by extension — keep the .sprite name
+  const file = testInfo.outputPath('untitled.sprite');
+  await (await dl).saveAs(file);
 
   // wave 9 flow: themed discard confirm → new-doc modal → create (32×32 default)
   await page.locator('.sl-act-new').click();
@@ -127,9 +132,9 @@ test('.sprite round-trips through save and open', async ({ page }) => {
     .poll(async () => (await probe(page)).nonZeroActive)
     .toBe(0);
 
-  await page.locator('.sl-act-more').click();
+  // wave 10: .sprite files come back through the topbar open picker
   const chooser = page.waitForEvent('filechooser');
-  await page.getByRole('menuitem', { name: /open \.sprite/ }).click();
+  await page.locator('.sl-act-open').click();
   await (await chooser).setFiles(file);
   await expect
     .poll(async () => (await probe(page)).nonZeroActive, { timeout: 3000 })
@@ -141,7 +146,8 @@ test('px map lands as paste-ready TS', async ({ page }) => {
   const box = await page.locator('.sl-canvas canvas').boundingBox();
   await page.mouse.click(box!.x + box!.width / 2, box!.y + box!.height / 2);
   await page.locator('.sl-act-more').click();
-  await page.getByRole('menuitem', { name: /px map/ }).click();
+  await page.locator('.sl-export-card-pxmap').click();
+  await page.locator('.sl-export-run').click();
   const clip = await page.evaluate(() => navigator.clipboard.readText().catch(() => ''));
   if (clip) {
     expect(clip).toContain('const COLORS = {');

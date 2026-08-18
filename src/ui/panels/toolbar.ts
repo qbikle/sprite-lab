@@ -18,6 +18,11 @@ export interface ToolbarOpts {
   onDither(): void;
   onUndo(): void;
   onRedo(): void;
+  /** Wave 10 (additive): canvas-transform actions rendered as a mini-button
+   *  cluster under the symmetry/dither tiles. Absent handler = no button. */
+  onFlipX?(): void;
+  onFlipY?(): void;
+  onRotate?(): void;
 }
 
 const IS_MAC = /mac|iphone|ipad|ipod/i.test(
@@ -126,6 +131,24 @@ export class ToolbarPanel {
     this.symBtn = sym;
     this.ditherBtn = dither;
 
+    const xformBtn = (
+      cls: string, name: IconName, title: string, onClick: () => void,
+    ): HTMLButtonElement => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `sl-xform-btn ${cls}`;
+      btn.title = title;
+      btn.appendChild(icon(name));
+      btn.addEventListener('click', onClick);
+      return btn;
+    };
+    const xform = div('sl-xform');
+    if (o.onFlipX) xform.appendChild(xformBtn('sl-flip-x', 'flip-x', 'flip horizontal', o.onFlipX.bind(o)));
+    if (o.onFlipY) xform.appendChild(xformBtn('sl-flip-y', 'flip-y', 'flip vertical', o.onFlipY.bind(o)));
+    if (o.onRotate) {
+      xform.appendChild(xformBtn('sl-rotate-cw', 'rotate-cw', 'rotate 90° clockwise', o.onRotate.bind(o)));
+    }
+
     const hist = div('sl-hist');
     const undo = document.createElement('button');
     undo.type = 'button';
@@ -145,7 +168,10 @@ export class ToolbarPanel {
     this.undoBtn = undo;
     this.redoBtn = redo;
 
-    o.host.append(tools, div('sl-sep'), brush, div('sl-sep'), modes, div('sl-sep'), hist);
+    // xform rides inside the mode cluster (no separator) — related canvas modes/actions
+    o.host.append(tools, div('sl-sep'), brush, div('sl-sep'), modes);
+    if (xform.childElementCount > 0) o.host.appendChild(xform);
+    o.host.append(div('sl-sep'), hist);
 
     this.unsubs.push(
       o.bus.on('tool:changed', () => this.syncActive()),

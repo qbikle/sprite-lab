@@ -86,6 +86,33 @@ export function pasteRect(dst: Uint32Array, dstW: number, rect: Rect, patch: Uin
   }
 }
 
+/** Nearest-neighbor upscale by an integer factor: every source pixel becomes a
+ *  factor×factor block. Pure — src is never touched; factor 1 returns a copy.
+ *  Allocation-exact: exactly one (w·factor)×(h·factor) buffer. */
+export function upscaleNearest(src: Uint32Array, w: number, h: number, factor: number): Uint32Array {
+  if (!Number.isInteger(factor) || factor < 1) {
+    throw new RangeError(`upscaleNearest: factor must be an integer >= 1, got ${factor}`);
+  }
+  if (src.length !== w * h) {
+    throw new RangeError(`upscaleNearest: src length ${src.length} != ${w}x${h}`);
+  }
+  if (factor === 1) return new Uint32Array(src);
+  const ow = w * factor;
+  const out = new Uint32Array(ow * h * factor);
+  for (let y = 0; y < h; y++) {
+    const srcOff = y * w;
+    const rowOff = y * factor * ow;
+    for (let x = 0; x < w; x++) {
+      const v = src[srcOff + x] ?? 0;
+      const o = rowOff + x * factor;
+      for (let i = 0; i < factor; i++) out[o + i] = v;
+    }
+    const row = out.subarray(rowOff, rowOff + ow);
+    for (let i = 1; i < factor; i++) out.set(row, rowOff + i * ow);
+  }
+  return out;
+}
+
 /** Bounding box of differing pixels between equal-size buffers; null if identical. */
 export function diffBounds(a: Uint32Array, b: Uint32Array, w: number, h: number): Rect | null {
   let minX = w;

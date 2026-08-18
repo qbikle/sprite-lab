@@ -2,7 +2,7 @@
  *  Pure packing math (node-testable) + a thin canvas/blob wrapper. */
 import type { SpriteDoc } from '../../core/doc';
 import type { Tag } from '../../core/contracts';
-import { makeBuffer } from '../../core/pixels';
+import { makeBuffer, upscaleNearest } from '../../core/pixels';
 
 export interface SheetExport {
   png: Blob;
@@ -56,12 +56,14 @@ function medianDuration(durations: readonly number[]): number {
 }
 
 /** v1 parity: { sheet, frameW, frameH, rows: [{row,label,fps,frames}] },
- *  pretty-printed. fps = round(1000 / median(row frame durations)). */
-export function buildSheetJson(doc: SpriteDoc, layout: SheetLayout): string {
+ *  pretty-printed. fps = round(1000 / median(row frame durations)).
+ *  `scale` keeps the JSON honest about a scaled PNG: frameW/frameH describe
+ *  the cells of the file that actually downloads. */
+export function buildSheetJson(doc: SpriteDoc, layout: SheetLayout, scale = 1): string {
   const data = {
     sheet: sheetFileName(doc.meta.name),
-    frameW: doc.width,
-    frameH: doc.height,
+    frameW: doc.width * scale,
+    frameH: doc.height * scale,
     rows: layout.rows.map((row, r) => {
       const durations = row.frameIndices.map((i) => doc.frames[i]?.durationMs ?? 100);
       return {
@@ -102,24 +104,31 @@ export function renderSheetPixels(doc: SpriteDoc, layout: SheetLayout): Uint32Ar
 /**
  * Pack every frame's composite into a grid (one TAG per row when tags exist,
  * else one row). fps per row derived from the tag's frames' durations (median).
+ * `scale` (integer ≥1) upscales the packed sheet nearest-neighbor — cell grid
+ * intact, JSON frameW/frameH scaled to match — before the crisp putImageData
+ * path (never resampled, imageSmoothingEnabled pinned off).
  */
-export async function exportSheet(doc: SpriteDoc): Promise<SheetExport> {
+export async function exportSheet(doc: SpriteDoc, scale = 1): Promise<SheetExport> {
   const layout = packSheetLayout(doc);
   if (layout.cols === 0 || layout.rows.length === 0) {
     throw new Error('Nothing to export — the document has no frames.');
   }
-  const sheetW = layout.cols * doc.width;
-  const sheetH = layout.rows.length * doc.height;
-  const pixels = renderSheetPixels(doc, layout);
+  const base = renderSheetPixels(doc, layout);
+  const baseW = layout.cols * doc.width;
+  const baseH = layout.rows.length * doc.height;
+  const pixels = scale === 1 ? base : upscaleNearest(base, baseW, baseH, scale);
+  const sheetW = baseW * scale;
+  const sheetH = baseH * scale;
   const canvas = document.createElement('canvas');
   canvas.width = sheetW;
   canvas.height = sheetH;
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Canvas 2D is unavailable in this browser.');
+  ctx.imageSmoothingEnabled = false;
   const img = ctx.createImageData(sheetW, sheetH);
   img.data.set(new Uint8ClampedArray(pixels.buffer, pixels.byteOffset, pixels.length * 4));
   ctx.putImageData(img, 0, 0);
   const png = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
   if (!png) throw new Error('PNG encoding failed.');
-  return { png, json: buildSheetJson(doc, layout) };
+  return { png, json: buildSheetJson(doc, layout, scale) };
 }

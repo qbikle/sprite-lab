@@ -69,7 +69,9 @@ test('palette add via + is undoable in the DOM, not just the model', async ({ pa
 
   await page.locator('.sl-hex').fill('#123456');
   await page.locator('.sl-hex').press('Enter');
+  // wave 10: + opens the picker seeded with the current color; confirm adds
   await page.locator('.sl-sw-add').click();
+  await page.locator('.sl-picker-ok').click();
   await expect(swatches).toHaveCount(before + 1);
 
   await page.keyboard.press('ControlOrMeta+z');
@@ -130,7 +132,7 @@ test('importer modal swallows app shortcuts until import is clicked', async ({ p
   expect((await probe(page)).frames).toBeGreaterThan(50);
 });
 
-test('export menu opens on ArrowDown and returns focus to the trigger', async ({ page }) => {
+test('export modal opens on ArrowDown; arrows move cards, Enter runs, focus returns', async ({ page }) => {
   await page.keyboard.press('b');
   const box = await page.locator('.sl-canvas canvas').boundingBox();
   if (!box) throw new Error('no canvas box');
@@ -139,17 +141,19 @@ test('export menu opens on ArrowDown and returns focus to the trigger', async ({
   const trigger = page.locator('.sl-act-more');
   await trigger.focus();
   await page.keyboard.press('ArrowDown');
-  await expect(trigger).toHaveAttribute('aria-expanded', 'true');
-  await expect(page.getByRole('menuitem', { name: /^png$/ })).toBeFocused();
+  await expect(page.locator('.sl-modal-card.sl-export')).toBeVisible();
+  await expect(page.locator('.sl-export-card-png')).toBeFocused();
 
-  await page.keyboard.press('ArrowDown');
-  await page.keyboard.press('ArrowDown');
-  await page.keyboard.press('ArrowDown');
-  await page.keyboard.press('ArrowDown');
-  await expect(page.getByRole('menuitem', { name: /px map/ })).toBeFocused();
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowRight');
+  await expect(page.locator('.sl-export-card-gif')).toBeFocused();
+  await page.keyboard.press('ArrowDown'); // one grid row down → .sprite
+  await expect(page.locator('.sl-export-card-sprite')).toBeFocused();
 
-  await page.keyboard.press('Enter');
+  const dl = page.waitForEvent('download');
+  await page.keyboard.press('Enter'); // runs the focused card
+  expect((await dl).suggestedFilename()).toBe('untitled.sprite');
+  await expect(page.locator('.sl-modal-card.sl-export')).toHaveCount(0);
   await expect(trigger).toBeFocused();
-  await expect(trigger).toHaveAttribute('aria-expanded', 'false');
-  expect((await probe(page)).playing).toBe(false); // Enter stayed in the menu
+  expect((await probe(page)).playing).toBe(false); // Enter stayed in the modal
 });

@@ -98,17 +98,20 @@ test('a fresh browser boots into the animated demo sprite', async ({ page }) => 
   await expect(page.locator('.sl-tag-name')).toContainText('idle');
 });
 
-test("'open demo' menu item reloads the demo after a 'new'", async ({ page }) => {
+test("the new-doc modal's demo footer link reloads the demo after a 'new'", async ({ page }) => {
   await newBlankDoc(page);
   let p = await probe(page);
   expect(p.docW).toBe(32);
   expect(p.frames).toBe(1);
   expect(p.nonZero).toBe(0);
 
-  await page.locator('.sl-act-more').click();
-  const item = page.locator('.sl-act-demo');
-  await expect(item).toHaveText('open demo');
+  // wave 10: demo moved from the export menu to the new-doc modal footer
+  // (a clean blank doc opens the modal with no discard confirm in between)
+  await page.locator('.sl-act-new').click();
+  const item = page.locator('.sl-newdoc-demo');
+  await expect(item).toHaveText('or open mochi, the demo cat');
   await item.click();
+  await expect(page.locator('.sl-modal-card.sl-newdoc')).toHaveCount(0);
 
   p = await probe(page);
   expect(p.docW).toBe(24);
