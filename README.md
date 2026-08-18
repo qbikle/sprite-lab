@@ -21,7 +21,7 @@ npm run test       # vitest unit suite (core model)
 npm run e2e        # playwright end-to-end (side port 5199)
 ```
 
-## Today (Waves 1–12)
+## Today (Waves 1–13)
 
 - **The arcade** — an in-app community wall: post your sprite (anonymous, 3/day), browse a gallery of live-animating pixels, heart things, and remix any post straight into your editor. The editor itself never needs the network.
 
@@ -36,6 +36,8 @@ npm run e2e        # playwright end-to-end (side port 5199)
 - Export modal: pick a format card, see exactly which files you get, scale 1×–100× (a 32px sprite exports razor-sharp at 3200px)
 - Live preview panel (always looping, tag-aware) + flip/rotate canvas ops
 - Sheets & IO: sprite-sheet labeler (rows → named tags), sheet+JSON repack, lossless GIF and animated WebP export (worker-encoded), px() char-map export, .sprite project files, dual-store autosave (OPFS + localStorage, newer-wins)
+- Timelapse export — a "watch it drawn" GIF replayed from your undo history
+- Custom stamp brushes (save a selection, paint with it), a daily drawing dare, lospec palette import
 - Hand-drawn 44-glyph icon set on one 16×16 grid, focus-visible everywhere
 - Touch & Apple Pencil: pinch/pan gestures, palm rejection, pressure→brush (`p`)
 - Installable PWA — works fully offline; first run opens mochi, the demo cat

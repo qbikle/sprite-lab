@@ -98,6 +98,7 @@ const WALL_COPY: Readonly<Record<string, string>> = {
   'sl/not_ready': NAP_COPY,
   rate_limited: BREATHER_COPY,
   'sl/min_play': BREATHER_COPY,
+  'sl/daily_budget': "that's a lot of love for one day — the hearts recharge tomorrow.",
 };
 
 const PUBLISH_COPY: Readonly<Record<string, string>> = {
@@ -320,6 +321,7 @@ class ArcadeOverlay {
   private animSet = new Set<Thumb>();
 
   private cursor: string | null = null;
+  private listGen = 0;
   private parentFilter: string | null = null;
   private loading = false;
   private done = false;
@@ -328,6 +330,10 @@ class ArcadeOverlay {
   constructor(opts: ArcadeOpts) {
     this.opts = opts;
     this.client = opts.client ?? arcadeClient();
+    // Warm the anon session while the user browses — the server's min-play
+    // gate refuses writes from tokens younger than 10s, so a lazy first-write
+    // mint would deterministically fail every fresh tab's first heart/publish.
+    this.client.warm?.();
     this.modal = new Modal({
       label: 'the arcade',
       className: 'sl-arcade',
@@ -602,6 +608,10 @@ class ArcadeOverlay {
   }
 
   private resetAndLoad(): void {
+    // New wall context (filter change, retry, crumb-back): invalidate every
+    // in-flight list response — a stale page landing after the wipe would
+    // splice the OLD context's posts and cursor into the new view.
+    this.listGen += 1;
     for (const t of this.thumbs) {
       const cardEl = t.canvas.closest('.sl-arcade-card');
       if (cardEl) {
@@ -627,11 +637,13 @@ class ArcadeOverlay {
     if (this.loading || this.done || this.publishOpen) return;
     this.loading = true;
     this.setTail('loading the wall…');
+    const gen = this.listGen;
     const req: { cursor?: string; parent?: string } = {};
     if (this.cursor !== null) req.cursor = this.cursor;
     if (this.parentFilter !== null) req.parent = this.parentFilter;
     void Promise.resolve(this.client.list(req))
       .then(({ posts, cursor }) => {
+        if (gen !== this.listGen) return; // stale context — dropped
         this.loading = false;
         this.appendCards(posts);
         this.cursor = cursor ?? null;
@@ -645,6 +657,7 @@ class ArcadeOverlay {
         }
       })
       .catch((e: unknown) => {
+        if (gen !== this.listGen) return; // stale context — dropped
         this.loading = false;
         if (this.thumbs.length === 0) this.showVoid(e);
         else this.setTailRetry(wallCopy(e));
@@ -780,6 +793,9 @@ class ArcadeOverlay {
     const paint = (hearted: boolean, n: number): void => {
       if (hearted) this.heartedIds.add(id);
       else this.heartedIds.delete(id);
+      // A wall rebuild mid-request detaches this card — state above stays
+      // honest (the rebuilt card reads heartedIds), the dead DOM stays dead.
+      if (!button.isConnected) return;
       button.classList.toggle('sl-hearted', hearted);
       button.setAttribute('aria-pressed', hearted ? 'true' : 'false');
       glyph.replaceChildren(pxGlyph(hearted ? HEART_FILL : HEART_LINE));

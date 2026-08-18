@@ -24,7 +24,7 @@ export function welcomeLine(): string {
 /** Mount the first-run corner card. Idempotent: a stray earlier card is
  *  replaced, never duplicated. Removes itself on dismiss, then calls
  *  onDismiss (the app's chance to persist "seen"). */
-export function mountFirstRunCard(onDismiss: () => void): void {
+export function mountFirstRunCard(onDismiss: () => void): () => void {
   document.querySelector('.sl-welcome')?.remove();
 
   const card = document.createElement('aside');
@@ -65,6 +65,7 @@ export function mountFirstRunCard(onDismiss: () => void): void {
 
   card.append(head, body, row);
   document.body.append(card);
+  return () => card.remove();
 }
 
 /* DEV-only harness: lets e2e exercise the card before app wiring lands.

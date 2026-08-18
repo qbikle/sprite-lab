@@ -21,6 +21,13 @@ export interface ModalOpts {
    modal, not the whole pile. */
 const modalStack: Modal[] = [];
 
+/** Closes every open modal, top-first — app teardown's safety net so an
+ *  unmount never strands a dialog, its key-capture listener, or the body
+ *  scroll lock. */
+export function closeAllModals(): void {
+  for (const m of [...modalStack].reverse()) m.close();
+}
+
 /* Body scroll lock is refcounted so stacked modals (confirm over newdoc)
    restore the original overflow only when the last one closes. */
 let scrollLocks = 0;

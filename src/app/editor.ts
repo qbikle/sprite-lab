@@ -56,6 +56,8 @@ export class EditorState implements ViewportDelegate {
   private stageBuf: StageBuffer | null = null;
   private stagedCount = 0;
   private pendingRect: Rect | null = null;
+  private guardW: number;
+  private guardH: number;
   private strokeTool: Tool | null = null;
   private flattenCache: Uint32Array | null = null;
   private readonly unsubDocChanged: () => void;
@@ -70,6 +72,8 @@ export class EditorState implements ViewportDelegate {
     if (!initial) throw new Error('EditorState requires at least one tool');
     this.activeTool = initial;
     this.currentToolId = initial.id;
+    this.guardW = doc.width;
+    this.guardH = doc.height;
 
     this.currentColor = EditorState.initialColor(doc);
     this.prevColor = this.currentColor;
@@ -93,24 +97,26 @@ export class EditorState implements ViewportDelegate {
         }
       }
       if (scope.kind === 'all') {
-        // Canvas dims can change under us (ResizeCanvas, incl. its undo/redo).
-        // Doc-sized session buffers keyed to the old dims would index with new-
-        // width math and commit scrambled pixels — drop them. Length checks
-        // make this fire only on genuine dims changes. A float's lifted pixels
-        // stay recoverable through the lift command in history.
-        const size = this.currentDoc.width * this.currentDoc.height;
-        if (this.stageBuf !== null && this.stageBuf.color.length !== size) {
-          this.stageBuf = null;
-          this.stagedCount = 0;
-          this.pendingRect = null;
-        }
-        const sel = this.selectionState;
-        if (sel !== null && sel.mask.length !== size) {
+        // Canvas dims can change under us (ResizeCanvas/Rotate90CW, incl.
+        // undo/redo). Doc-sized session buffers keyed to the old dims would
+        // index with new-width math and commit scrambled pixels — drop them.
+        // Compare (w,h), not buffer length: a rotate on a non-square doc
+        // swaps dims while preserving area. A float's lifted pixels stay
+        // recoverable through the lift command in history.
+        const { width, height } = this.currentDoc;
+        if (width !== this.guardW || height !== this.guardH) {
+          this.guardW = width;
+          this.guardH = height;
+          if (this.stageBuf !== null) {
+            this.stageBuf = null;
+            this.stagedCount = 0;
+            this.pendingRect = null;
+          }
           if (this.floatState !== null) this.host.float = null;
-          this.host.selection = null;
+          if (this.selectionState !== null) this.host.selection = null;
         } else if (this.floatState !== null) {
           const r = this.floatState.rect;
-          if (r.x + r.w > this.currentDoc.width || r.y + r.h > this.currentDoc.height) {
+          if (r.x + r.w > width || r.y + r.h > height) {
             this.host.float = null;
           }
         }
@@ -405,6 +411,8 @@ export class EditorState implements ViewportDelegate {
     this.playingFlag = false;
     this.currentDoc = doc;
     this.historyRef.replaceDoc(doc);
+    this.guardW = doc.width;
+    this.guardH = doc.height;
     this.frameIndex = 0;
     this.layerIndex = 0;
     this.currentColor = EditorState.initialColor(doc);

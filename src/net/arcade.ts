@@ -54,6 +54,10 @@ export interface ArcadeClient {
   heart(id: string): Promise<{ hearted: boolean; hearts: number }>;
   report(id: string, reason?: string): Promise<void>;
   stats(): Promise<{ totalPosts: number; flags: Record<string, boolean> }>;
+  /** Fire-and-forget session mint. The server refuses writes from tokens
+   *  younger than its min-play gate — warming at arcade OPEN lets the clock
+   *  run while the user browses, so their first heart/publish isn't refused. */
+  warm?(): void;
 }
 
 /** Server caps, mirrored from sl/logic.ts (SPRITE_DIMENSION_MAX / SPRITE_FRAMES_MAX / DATA_ENCODED_MAX). */
@@ -185,6 +189,12 @@ export function arcadeClient(base?: string): ArcadeClient {
   }
 
   return {
+    warm() {
+      if (token !== null) return;
+      void mint().catch(() => {
+        /* offline/closed — the first write will surface it properly */
+      });
+    },
     async list(opts = {}) {
       const q = new URLSearchParams();
       if (opts.limit !== undefined) q.set('limit', String(opts.limit));

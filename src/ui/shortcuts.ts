@@ -11,13 +11,13 @@ import { Modal } from './modal';
 export interface ShortcutDef {
   keys: string;
   desc: string;
-  group: string; // cheat-sheet section: 'tools' | 'canvas' | 'edit' | 'app'
+  group: string; // cheat-sheet section: 'tools' | 'canvas' | 'edit' | 'anim' | 'app'
   /** Alias bindings: active, but omitted from the cheat sheet. */
   hidden?: boolean;
   run: () => void;
 }
 
-const GROUP_ORDER = ['tools', 'canvas', 'edit', 'app'];
+const GROUP_ORDER = ['tools', 'canvas', 'edit', 'anim', 'app'];
 
 function isMacPlatform(): boolean {
   const nav = navigator as Navigator & { userAgentData?: { platform?: string } };

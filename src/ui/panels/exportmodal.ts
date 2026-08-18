@@ -275,18 +275,21 @@ export function openExportModal(opts: {
     scaleRow.hidden = !scalable;
     if (scalable) {
       const max = maxScaleFor(selected);
-      if (scale > max) scale = max;
+      // Display/run clamp only — `scale` stays the user's raw preference so
+      // BROWSING a low-cap card (gif on a big doc) never destroys a persisted
+      // 8× png choice. The clamp is applied where it matters: here and at run.
+      const eff = Math.min(scale, max);
       const base = baseDims(doc, selected);
       for (const [s, chip] of chips) {
         chip.disabled = s > max;
-        chip.classList.toggle('active', s === scale);
-        chip.setAttribute('aria-pressed', s === scale ? 'true' : 'false');
+        chip.classList.toggle('active', s === eff);
+        chip.setAttribute('aria-pressed', s === eff ? 'true' : 'false');
       }
       custom.max = String(max);
-      custom.value = String(scale);
+      custom.value = String(eff);
       const capped = max < (CHIP_SCALES[CHIP_SCALES.length - 1] ?? 16);
       dims.textContent =
-        `${base.w}${TIMES}${base.h} → ${base.w * scale}${TIMES}${base.h * scale} px` +
+        `${base.w}${TIMES}${base.h} → ${base.w * eff}${TIMES}${base.h * eff} px` +
         (capped ? ` · max ${max}${TIMES} (${def.label} output caps at ${def.cap} px)` : '');
     }
     savePersisted({ format: selected, scale });
@@ -317,7 +320,7 @@ export function openExportModal(opts: {
 
   const run = (): void => {
     const id = selected;
-    const s = scale;
+    const s = Math.min(scale, maxScaleFor(selected));
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
     modal.close();
     switch (id) {

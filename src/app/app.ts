@@ -33,7 +33,7 @@ import { FlipFrameX, FlipFrameY, Rotate90CW } from '../core/commands/transform';
 import { upscaleNearest } from '../core/pixels';
 import { Shell } from '../ui/shell';
 
-import { confirmModal } from '../ui/modal';
+import { closeAllModals, confirmModal } from '../ui/modal';
 import { mountFirstRunCard, welcomeLine } from '../ui/welcome';
 import { docFromChoice, openNewDocModal, openResizeModal } from '../ui/panels/newdoc';
 import { openExportModal } from '../ui/panels/exportmodal';
@@ -581,9 +581,15 @@ export class App {
       const w = d.width * scale;
       const h = d.height * scale;
       const total = d.frames.length;
+      // Snapshot every frame SYNCHRONOUSLY before the first await — the app
+      // stays interactive between per-frame encodes, and live edits (or a
+      // resize) mid-export would otherwise produce a chimera file or throw.
+      const flats = d.frames.map((_, i) => d.flattenFrame(i));
+      const durations = d.frames.map((f) => f.durationMs);
       const frames: Array<{ payload: ArrayBuffer; durationMs: number }> = [];
       for (let i = 0; i < total; i++) {
-        const flat = d.flattenFrame(i);
+        const flat = flats[i];
+        if (flat === undefined) continue;
         const scaled = scale === 1 ? flat : upscaleNearest(flat, d.width, d.height, scale);
         const canvas = new OffscreenCanvas(w, h);
         const ctx = canvas.getContext('2d');
@@ -593,7 +599,7 @@ export class App {
         ctx.putImageData(img, 0, 0);
         // quality 1 → Chromium emits lossless VP8L; the default is lossy VP8
         const blob = await canvas.convertToBlob({ type: 'image/webp', quality: 1 });
-        frames.push({ payload: await blob.arrayBuffer(), durationMs: d.frames[i]?.durationMs ?? 100 });
+        frames.push({ payload: await blob.arrayBuffer(), durationMs: durations[i] ?? 100 });
         status(`encoding webp ${i + 1}/${total}`);
       }
       const out = await encoder.request(
@@ -632,7 +638,7 @@ export class App {
         doc: () => editor.doc,
         activeFrame: () => editor.activeFrame,
         canWebp: canEncodeWebp,
-        canTimelapse: () => history.canUndo,
+        canTimelapse: () => history.entries().cursor >= 2,
         run: {
           png: ({ scale }) => exportPngFrame(scale),
           sheet: ({ scale }) => exportSheetJson(scale),
@@ -643,15 +649,27 @@ export class App {
           pxmap: exportPxSnippet,
           sprite: () => downloadBlob(docToSpriteFile(editor.doc), spriteFileName(editor.doc)),
           timelapse: ({ scale }) => {
-            editor.cancelOrDismiss(); // anchor a live float (undoable)
-            editor.cancelOrDismiss(); // then drop the selection — both doc-sized
+            // NO commits here — a commit truncates the user's redo tail, and
+            // capture promises to leave history exactly as found. A live
+            // selection/float rides the walk like user-driven undo/redo does.
             player.pause();
+            const keepFrame = editor.activeFrame;
+            const keepLayer = editor.activeLayer;
+            const cam = { zoom: camera.zoom, panX: camera.panX, panY: camera.panY };
             const result = captureTimelapse({
               history,
               editor,
               scale,
               onProgress: (done, total) => status(`capturing timelapse ${done}/${total}`),
             });
+            // The walk's structural undos clamp active indices down and its
+            // dims transitions refit the camera — restore the user's seat.
+            editor.setActiveFrame(keepFrame);
+            editor.setActiveLayer(keepLayer);
+            camera.zoom = cam.zoom;
+            camera.panX = cam.panX;
+            camera.panY = cam.panY;
+            bus.emit('camera:changed');
             if (!result) {
               status('nothing to replay — draw something first');
               return;
@@ -847,7 +865,8 @@ export class App {
     }
 
     bus.emit('status:message', { text: welcomeLine() });
-    if (firstRun) mountFirstRunCard(() => {});
+    if (firstRun) this.teardown.push(mountFirstRunCard(() => {}));
+    this.teardown.push(closeAllModals);
   }
 
   unmount(): void {
