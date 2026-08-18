@@ -94,6 +94,7 @@ commit, conventional cozy commit + push.
 - The arcade server clamps list `limit` to 1–30 — never ask for more.
 - Render's per-key env-var API PUT does NOT trigger a redeploy — POST /v1/services/{id}/deploys after setting, or the process keeps the old env.
 - Private-mode browsers regenerate the arcade anonId per session (no localStorage) — budgets then key mostly off IP; by design.
+- Modals mount on `<body>`, OUTSIDE `.sl-shell` — a `.sl-shell`-prefixed selector on modal content silently never matches (the button falls back to the `:where(.sl-modal-card) button` skin); style modal elements with bare single-class rules.
 
 ## Session log
 

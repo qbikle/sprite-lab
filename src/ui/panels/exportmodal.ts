@@ -1,4 +1,4 @@
-/** Export modal — one surface for every way pixels leave the app. Six format
+/** Export modal — one surface for every way pixels leave the app. Seven format
  *  cards (roving-tabindex grid), an honest manifest line naming EXACTLY which
  *  files download, and a nearest-neighbor scale row for the raster formats
  *  (chips + custom integer, output-side caps: png/sheet 4096, gif/webp 1024).
@@ -14,6 +14,10 @@ export interface ExportRunners {
   webp(o: { scale: number }): void;
   pxmap(): void;
   sprite(): void;
+  /** Wave 13 (optional so pre-wiring callers stay green — the app wires it;
+   *  an un-wired runner makes the card's run a no-op): history-replay
+   *  "watch me draw" GIF. */
+  timelapse?(o: { scale: number }): void;
 }
 
 type FormatId = keyof ExportRunners;
@@ -23,6 +27,7 @@ const CHIP_SCALES = [1, 2, 4, 8, 16] as const;
 const GRID_COLS = 3;
 const TIMES = '×';
 const WEBP_HINT = 'needs a chromium browser — try gif';
+const TIMELAPSE_HINT = 'draw something first — the timelapse replays your history';
 
 interface FormatDef {
   id: FormatId;
@@ -39,6 +44,7 @@ const FORMATS: readonly FormatDef[] = [
   { id: 'webp', label: 'animated webp', note: 'animation', cap: 1024 },
   { id: 'pxmap', label: 'px map', note: 'paste-ready TS', cap: null },
   { id: 'sprite', label: '.sprite', note: 'project file', cap: null },
+  { id: 'timelapse', label: 'timelapse', note: 'watch it drawn — gif', cap: 1024 },
 ];
 
 /** Live per-doc card notes (frame counts beat static copy). */
@@ -112,6 +118,9 @@ export function openExportModal(opts: {
   activeFrame: () => number;
   run: ExportRunners;
   canWebp: () => Promise<boolean>;
+  /** Wave 13 (additive, default true): false disables the timelapse card
+   *  ('nothing to replay' — history holds fewer than 2 entries). */
+  canTimelapse?: () => boolean;
 }): void {
   const doc = opts.doc();
   const name = doc.meta.name;
@@ -124,6 +133,7 @@ export function openExportModal(opts: {
       case 'webp': return `${name}.webp`;
       case 'pxmap': return `clipboard (falls back to ${name}.pxmap.ts)`;
       case 'sprite': return `${name}.sprite`;
+      case 'timelapse': return `${name}-timelapse.gif`;
     }
   };
 
@@ -131,6 +141,11 @@ export function openExportModal(opts: {
   let selected: FormatId = persisted?.format ?? 'png';
   let scale = Math.max(1, persisted?.scale ?? 1);
   let webpOk = true;
+  const timelapseOk = opts.canTimelapse?.() ?? true;
+  // persisted timelapse falls back rather than opening on a dead selection
+  if (selected === 'timelapse' && !timelapseOk) selected = 'gif';
+  const cardDisabled = (id: FormatId): boolean =>
+    (id === 'webp' && !webpOk) || (id === 'timelapse' && !timelapseOk);
 
   /* The Modal swallows ALL non-typing keydowns at window capture — card
      navigation must register its own capture listener BEFORE modal.open()
@@ -243,12 +258,15 @@ export function openExportModal(opts: {
       const on = f.id === selected;
       card.classList.toggle('active', on);
       card.setAttribute('aria-pressed', on ? 'true' : 'false');
-      const disabled = f.id === 'webp' && !webpOk;
+      const disabled = cardDisabled(f.id);
       card.disabled = disabled;
       card.tabIndex = on ? 0 : -1;
       const note = card.querySelector<HTMLElement>('.sl-export-card-note');
       if (note && f.id === 'webp') {
         note.textContent = disabled ? WEBP_HINT : noteFor(f, doc, opts.activeFrame());
+      }
+      if (note && f.id === 'timelapse') {
+        note.textContent = disabled ? TIMELAPSE_HINT : noteFor(f, doc, opts.activeFrame());
       }
     }
     manifestLine.textContent = manifestFor(selected);
@@ -275,7 +293,7 @@ export function openExportModal(opts: {
   };
 
   const select = (id: FormatId): void => {
-    if (id === 'webp' && !webpOk) return;
+    if (cardDisabled(id)) return;
     selected = id;
     sync();
   };
@@ -309,6 +327,7 @@ export function openExportModal(opts: {
       case 'webp': opts.run.webp({ scale: s }); break;
       case 'pxmap': opts.run.pxmap(); break;
       case 'sprite': opts.run.sprite(); break;
+      case 'timelapse': opts.run.timelapse?.({ scale: s }); break;
     }
   };
 
@@ -320,13 +339,27 @@ export function openExportModal(opts: {
     const onCard = active instanceof HTMLElement && active.classList.contains('sl-export-card');
     if (onCard && (e.key === 'ArrowRight' || e.key === 'ArrowLeft'
       || e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
-      const order = FORMATS.filter((f) => !(f.id === 'webp' && !webpOk)).map((f) => f.id);
-      const at = order.indexOf(selected);
       let next: FormatId | undefined;
-      if (e.key === 'ArrowRight') next = order[(at + 1) % order.length];
-      else if (e.key === 'ArrowLeft') next = order[(at - 1 + order.length) % order.length];
-      else if (e.key === 'ArrowDown') next = order[Math.min(order.length - 1, at + GRID_COLS)];
-      else next = order[Math.max(0, at - GRID_COLS)];
+      if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+        // horizontal: ring over the ENABLED cards (disabled ones are skipped)
+        const order = FORMATS.filter((f) => !cardDisabled(f.id)).map((f) => f.id);
+        const at = order.indexOf(selected);
+        next = e.key === 'ArrowRight'
+          ? order[(at + 1) % order.length]
+          : order[(at - 1 + order.length) % order.length];
+      } else {
+        // vertical: FULL grid geometry (a disabled card still occupies its
+        // slot), clamped to the edge, then nudged off a disabled landing —
+        // filtered-index math here would shear columns whenever a mid-grid
+        // card (webp, timelapse) is disabled.
+        const grid = FORMATS.map((f) => f.id);
+        const at = grid.indexOf(selected);
+        let t = e.key === 'ArrowDown'
+          ? Math.min(grid.length - 1, at + GRID_COLS)
+          : Math.max(0, at - GRID_COLS);
+        while (t !== at && cardDisabled(grid[t] ?? selected)) t += t > at ? -1 : 1;
+        next = grid[t];
+      }
       e.preventDefault();
       e.stopPropagation();
       if (next !== undefined && next !== selected) {

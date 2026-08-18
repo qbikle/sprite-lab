@@ -3155,3 +3155,200 @@ textarea,
     transform: none;
   }
 }
+
+/* ===== wave 13: stamps ===== */
+
+.sl-stamps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.sl-shell .sl-stamps-capture {
+  font-size: var(--fs-small);
+  padding: 4px 8px;
+}
+
+.sl-shell .sl-stamps-capture:disabled {
+  color: var(--dim);
+  cursor: default;
+}
+
+.sl-stamps-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+}
+
+.sl-stamps-grid:empty::after {
+  content: 'select pixels, then capture';
+  font-size: var(--fs-small);
+  color: var(--dim);
+}
+
+.sl-shell .sl-stamp-tile {
+  width: 36px;
+  height: 36px;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--border);
+  background-color: var(--panel-2);
+  background-image: repeating-conic-gradient(var(--checker-a) 0% 25%, var(--checker-b) 0% 50%);
+  background-size: 8px 8px;
+}
+
+.sl-shell .sl-stamp-tile:hover {
+  border-color: var(--dim);
+}
+
+.sl-shell .sl-stamp-tile.active {
+  border-color: var(--accent);
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.sl-stamp-thumb {
+  display: block;
+  image-rendering: pixelated;
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+/* ===== wave 13: daily dare + lospec (merged from docs/drafts) ===== */
+/* ═══ wave 13 draft — daily dare strip + lospec import modal ═══
+   Agent D draft for the app.css owner to merge. Tokens only — both themes
+   come from the token sheet. `@keyframes sl-shake` already lives in app.css.
+   Two blocks:
+   1. .sl-daily*  — one quiet line inside the new-doc modal, above the
+      actions row: dim label, prompt, 4 color chips, quiet take link
+      (the .sl-newdoc-demo idiom — a delight, not a billboard).
+   2. .sl-lospec* — small fetch dialog on the shared .sl-modal-* skin
+      (input matches the modal-scoped input skin; status line reserves its
+      height so the card never jumps between idle/fetching/error). */
+
+/* ── new-doc modal: today's dare strip ──────────────────── */
+/* One quiet line: [4 chips] a mossy jellyfish        take the dare
+   The chips are the label — 'today's dare' lives in the prompt tooltip. */
+
+.sl-daily {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+  padding-top: var(--sp-2);
+  border-top: 1px solid var(--panel-2);
+  font-size: var(--fs-small);
+  min-width: 0;
+}
+
+.sl-daily-prompt {
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.sl-daily.active .sl-daily-prompt {
+  color: var(--accent);
+}
+
+.sl-daily-chips {
+  display: flex;
+  gap: 2px;
+  flex: none;
+}
+
+.sl-daily-chip {
+  width: 10px;
+  height: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+/* quiet link, the .sl-newdoc-demo idiom (modals mount OUTSIDE .sl-shell —
+   never prefix these with it) */
+.sl-daily-take {
+  margin-left: auto;
+  flex: none;
+  white-space: nowrap;
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  color: var(--dim);
+  font-size: var(--fs-small);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.sl-daily-take:hover:not(:disabled) {
+  color: var(--accent);
+  filter: none;
+}
+
+.sl-daily.active .sl-daily-take {
+  color: var(--accent);
+}
+
+/* ── lospec import modal ────────────────────────────────── */
+
+.sl-modal-card.sl-lospec {
+  width: min(360px, 92vw);
+}
+
+.sl-lospec-hint {
+  margin: 0 0 var(--sp-2);
+  color: var(--dim);
+  font-size: var(--fs-small);
+}
+
+/* the modal-scoped input skin (.sl-newdoc-name et al) */
+.sl-lospec-input {
+  width: 100%;
+  min-width: 0;
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  padding: 3px 8px;
+}
+
+.sl-lospec-input:focus {
+  border-color: var(--accent-2);
+  outline: none;
+}
+
+.sl-lospec-input.sl-shake {
+  animation: sl-shake 0.25s;
+  border-color: var(--danger);
+}
+
+.sl-lospec-input:disabled {
+  opacity: 0.6;
+}
+
+/* reserved line: idle → fetching → error never resizes the card */
+.sl-lospec-status {
+  margin: var(--sp-2) 0 0;
+  min-height: 1.2em;
+  color: var(--dim);
+  font-size: var(--fs-small);
+}
+
+.sl-lospec-status.error {
+  color: var(--danger);
+}
+
+/* loaded lospec palette name on the fourth new-doc radio */
+.sl-newdoc-lospec-caption {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}

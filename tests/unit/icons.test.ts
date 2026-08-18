@@ -3,7 +3,7 @@ import { GLYPH_ROWS, ICON_NAMES } from '../../src/ui/icons';
 
 describe('icon registry', () => {
   it('covers every name with a well-formed 16×16 glyph', () => {
-    expect(ICON_NAMES.length).toBe(47);
+    expect(ICON_NAMES.length).toBe(48);
     for (const name of ICON_NAMES) {
       const rows = GLYPH_ROWS[name];
       expect(rows.length, `${name} row count`).toBe(16);

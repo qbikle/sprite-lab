@@ -58,6 +58,10 @@ import { framePxMap } from '../io/exporters/pxmap';
 import { docToSpriteFile, spriteFileName } from '../io/project';
 import { EncoderClient } from '../io/workers/protocol';
 import { SheetImporter } from '../ui/panels/importer';
+import { StampTool } from '../tools/stamp';
+import { StampsPanel } from '../ui/panels/stamps';
+import { selectionPixels } from './stamps';
+import { captureTimelapse } from './timelapse';
 import { EditorState } from './editor';
 import { Player } from './player';
 
@@ -137,7 +141,7 @@ export class App {
     const tools = [
       new PencilTool(), new EraserTool(), new EyedropperTool(), new FillTool(),
       new LineTool(), new RectTool(), new EllipseTool(),
-      new SelectRectTool(), new LassoTool(), new MoveTool(),
+      new SelectRectTool(), new LassoTool(), new MoveTool(), new StampTool(bus),
     ];
     const editor = new EditorState(doc, history, bus, tools);
     this.teardown.push(() => editor.dispose());
@@ -431,6 +435,19 @@ export class App {
     preview.mount();
     this.teardown.push(() => preview.unmount());
 
+    const stampsPanel = new StampsPanel({
+      host: slots.side,
+      bus,
+      getSelectionPixels: () => selectionPixels(editor),
+      onUseStamp: () => {
+        editor.cancelOrDismiss(); // anchor a live float (undoable)
+        editor.cancelOrDismiss(); // then drop the selection — stamping is selection-gated
+        editor.setTool('stamp');
+      },
+    });
+    stampsPanel.mount();
+    this.teardown.push(() => stampsPanel.unmount());
+
     const adopt = (next: SpriteDoc): void => {
       setRemixParent(null); // any non-remix adoption voids stale lineage
       player.pause();
@@ -615,6 +632,7 @@ export class App {
         doc: () => editor.doc,
         activeFrame: () => editor.activeFrame,
         canWebp: canEncodeWebp,
+        canTimelapse: () => history.canUndo,
         run: {
           png: ({ scale }) => exportPngFrame(scale),
           sheet: ({ scale }) => exportSheetJson(scale),
@@ -624,6 +642,29 @@ export class App {
           },
           pxmap: exportPxSnippet,
           sprite: () => downloadBlob(docToSpriteFile(editor.doc), spriteFileName(editor.doc)),
+          timelapse: ({ scale }) => {
+            editor.cancelOrDismiss(); // anchor a live float (undoable)
+            editor.cancelOrDismiss(); // then drop the selection — both doc-sized
+            player.pause();
+            const result = captureTimelapse({
+              history,
+              editor,
+              scale,
+              onProgress: (done, total) => status(`capturing timelapse ${done}/${total}`),
+            });
+            if (!result) {
+              status('nothing to replay — draw something first');
+              return;
+            }
+            void encoder
+              .request(
+                { kind: 'gif', w: result.w, h: result.h, frames: result.frames },
+                result.frames.map((f) => f.pixels),
+                (done, total) => status(`encoding timelapse ${done}/${total}`),
+              )
+              .then((blob) => downloadBlob(blob, `${editor.doc.meta.name}-timelapse.gif`))
+              .catch(() => status('timelapse export failed'));
+          },
         },
       });
     trigger.addEventListener('click', openExport);

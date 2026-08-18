@@ -87,7 +87,8 @@ export type ToolId =
   | 'ellipse'
   | 'select-rect'
   | 'lasso'
-  | 'move';
+  | 'move'
+  | 'stamp'; // Wave 13 (additive): custom stamp brushes
 
 export interface PointerInfo {
   buttons: number;

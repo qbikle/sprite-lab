@@ -3,9 +3,11 @@
  *  reverts to the last good value with a shake, commits always blur. */
 import type { Rgba } from '../../core/contracts';
 import type { ResizeAnchor } from '../../core/commands/resize';
+import { dailySeed } from '../../app/daily';
 import { SpriteDoc } from '../../core/doc';
 import { hexToRgba, rgbaToHex } from '../../core/pixels';
 import { Modal } from '../modal';
+import { openLospecModal } from './lospec';
 
 export interface NewDocChoice {
   width: number;
@@ -14,6 +16,9 @@ export interface NewDocChoice {
   palette: 'starter' | 'current' | 'empty';
   /** Rgba fill for the first cel; 0 = transparent. */
   background: number;
+  /** When present, these become the new doc's palette (daily dare / lospec
+   *  import) — applied after the `palette` source. Wave 13, additive. */
+  seedColors?: number[];
 }
 
 const SIZE_MIN = 4;
@@ -203,6 +208,22 @@ export function openNewDocModal(opts: {
     radios.push({ radio, value });
     palChoices.appendChild(label);
   }
+
+  /* Fourth source: lospec import. The radio opens the fetch dialog; a loaded
+   * palette rides the seedColors mechanism (source 'empty' + seeded colors). */
+  let lospecColors: number[] | null = null;
+  let lastStandard: NewDocChoice['palette'] = 'starter';
+  const lospecLabel = document.createElement('label');
+  lospecLabel.className = 'sl-newdoc-radio sl-newdoc-lospec';
+  const lospecRadio = document.createElement('input');
+  lospecRadio.type = 'radio';
+  lospecRadio.name = 'sl-newdoc-palette';
+  lospecRadio.value = 'lospec';
+  const lospecCaption = document.createElement('span');
+  lospecCaption.className = 'sl-newdoc-lospec-caption';
+  lospecCaption.textContent = 'lospec…';
+  lospecLabel.append(lospecRadio, lospecCaption);
+  palChoices.appendChild(lospecLabel);
   palRow.append(palCaption, palChoices);
 
   const bgRow = div('sl-newdoc-row');
@@ -242,6 +263,75 @@ export function openNewDocModal(opts: {
   syncBgChip();
   bgRow.append(bgCaption, bgChip, bgInput);
 
+  /* ── today's dare: one quiet line — prompt + 4 chips + take ─────────── */
+  const seed = dailySeed();
+  let dareSeed: number[] | null = null;
+  const dare = div('sl-daily');
+  const darePrompt = document.createElement('span');
+  darePrompt.className = 'sl-daily-prompt';
+  darePrompt.textContent = seed.prompt;
+  darePrompt.title = `today's dare — a new one every day`;
+  const dareChips = div('sl-daily-chips');
+  for (const c of seed.colors) {
+    const chip = document.createElement('span');
+    chip.className = 'sl-daily-chip';
+    chip.dataset['color'] = rgbaToHex(c);
+    chip.style.background = rgbaToHex(c);
+    dareChips.appendChild(chip);
+  }
+  const takeBtn = button('sl-daily-take', 'take the dare');
+  takeBtn.title = `name it '${seed.prompt}' and start from its 4 colors`;
+  takeBtn.setAttribute('aria-pressed', 'false');
+  const clearDare = (): void => {
+    dareSeed = null;
+    dare.classList.remove('active');
+    takeBtn.setAttribute('aria-pressed', 'false');
+  };
+  takeBtn.addEventListener('click', () => {
+    nameInput.value = seed.prompt;
+    const empty = radios.find((r) => r.value === 'empty');
+    if (empty) empty.radio.checked = true;
+    lastStandard = 'empty';
+    dareSeed = [...seed.colors];
+    dare.classList.add('active');
+    takeBtn.setAttribute('aria-pressed', 'true');
+  });
+  dare.append(dareChips, darePrompt, takeBtn);
+
+  /* A hand-picked standard source drops the dare seed; programmatic checks
+   * (take / lospec-cancel revert) fire no 'change' and keep it. */
+  for (const { radio, value } of radios) {
+    radio.addEventListener('change', () => {
+      lastStandard = value;
+      clearDare();
+    });
+  }
+
+  let lospecOpen = false;
+  const openLospec = (): void => {
+    if (lospecOpen) return;
+    lospecOpen = true;
+    openLospecModal({
+      onLoad: (p) => {
+        lospecOpen = false;
+        lospecColors = [...p.colors];
+        lospecCaption.textContent = `lospec: ${p.name} (${p.colors.length})`;
+        lospecRadio.checked = true;
+        clearDare();
+      },
+      onCancel: () => {
+        lospecOpen = false;
+        if (lospecColors !== null) return; // keep the palette already loaded
+        lospecRadio.checked = false;
+        const back = radios.find((r) => r.value === lastStandard);
+        if (back) back.radio.checked = true;
+      },
+    });
+  };
+  // click AND change (keyboard arrows) both land here; the flag dedupes
+  lospecRadio.addEventListener('click', openLospec);
+  lospecRadio.addEventListener('change', openLospec);
+
   const actions = div('sl-modal-actions');
   const cancel = button('sl-newdoc-cancel', 'cancel');
   cancel.addEventListener('click', () => modal.close());
@@ -265,11 +355,20 @@ export function openNewDocModal(opts: {
       bgInput.focus();
       return;
     }
-    const palette = radios.find((r) => r.radio.checked)?.value ?? 'starter';
+    let palette = radios.find((r) => r.radio.checked)?.value ?? 'starter';
+    let seedColors: number[] | undefined;
+    if (lospecRadio.checked) {
+      palette = 'empty';
+      if (lospecColors !== null) seedColors = [...lospecColors];
+    } else if (dareSeed !== null && palette === 'empty') {
+      seedColors = [...dareSeed];
+    }
     const name = nameInput.value.trim() || 'untitled';
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
     modal.close();
-    opts.onCreate({ width, height, name, palette, background });
+    const choice: NewDocChoice = { width, height, name, palette, background };
+    if (seedColors !== undefined) choice.seedColors = seedColors;
+    opts.onCreate(choice);
   };
   create.addEventListener('click', submit);
   routeEnter(modal.root, submit);
@@ -280,7 +379,7 @@ export function openNewDocModal(opts: {
   const sizeWrap = div('sl-newdoc-row');
   sizeWrap.append(sizeCaption, sizeRow('sl-newdoc-size', 'sl-newdoc-x', w, h));
 
-  modal.root.append(title, presets, sizeWrap, nameLabel, palRow, bgRow, actions);
+  modal.root.append(title, presets, sizeWrap, nameLabel, palRow, bgRow, dare, actions);
   const onDemo = opts.onDemo;
   if (onDemo) {
     const foot = div('sl-newdoc-foot');
@@ -388,11 +487,13 @@ export function openResizeModal(opts: {
 
 /** NewDocChoice → SpriteDoc: blank doc, palette source applied, background
  *  filled into the first cel. `currentColors` feeds the 'current' source
- *  (the app passes the live palette's colors). */
+ *  (the app passes the live palette's colors). `seedColors`, when present,
+ *  become the palette after the source (daily dare / lospec import). */
 export function docFromChoice(choice: NewDocChoice, currentColors: readonly Rgba[]): SpriteDoc {
   const doc = SpriteDoc.blank(choice.width, choice.height, choice.name);
   if (choice.palette === 'current') doc.palette.colors = [...currentColors];
   else if (choice.palette === 'empty') doc.palette.colors = [];
+  if (choice.seedColors !== undefined) doc.palette.colors = [...choice.seedColors];
   if (choice.background !== 0) doc.ensureCel(doc.celKeyAt(0, 0)).fill(choice.background);
   return doc;
 }

@@ -99,3 +99,100 @@ export function openPaletteFile(onColors: (name: string, colors: Rgba[]) => void
 export function downloadText(text: string, filename: string): void {
   downloadBlob(new Blob([text], { type: 'text/plain' }), filename);
 }
+
+/* ── lospec.com palette import (Wave 13) ─────────────────────────────────
+   lospec serves `/palette-list/<slug>.json` with `access-control-allow-origin:
+   *` (verified 2026-08-18), so a plain browser fetch works. Every failure —
+   including a CORS/offline block, which fetch surfaces as a bare TypeError —
+   maps to a typed LospecError with a human message; raw errors never leak. */
+
+/** Typed failure from fetchLospecPalette — `message` is always human-safe. */
+export interface LospecError extends Error {
+  code: 'bad_input' | 'network' | 'not_found' | 'http' | 'bad_data';
+}
+
+export function isLospecError(err: unknown): err is LospecError {
+  return err instanceof Error && err.name === 'LospecError' &&
+    typeof (err as { code?: unknown }).code === 'string';
+}
+
+function lospecError(code: LospecError['code'], message: string): LospecError {
+  const err = new Error(message) as LospecError;
+  err.name = 'LospecError';
+  err.code = code;
+  return err;
+}
+
+const SLUG_RE = /^[a-z0-9-]+$/;
+
+/** `https://lospec.com/palette-list/<slug>` (any suffix) or a bare slug →
+ *  the slug, lowercased; null when it can't be one. Pure. */
+export function lospecSlug(input: string): string | null {
+  let s = input.trim().toLowerCase();
+  if (s === '') return null;
+  if (s.includes('lospec.com')) {
+    const m = /lospec\.com\/palette-list\/([a-z0-9-]+)/.exec(s);
+    if (!m || m[1] === undefined) return null;
+    s = m[1];
+  } else if (s.includes('/') || s.includes('.') || s.includes(' ')) {
+    // bare-slug form may only carry a stray .json / wrapping slashes
+    s = s.replace(/^\/+|\/+$/g, '');
+    if (s.endsWith('.json')) s = s.slice(0, -'.json'.length);
+    if (!SLUG_RE.test(s)) return null;
+  }
+  if (s.endsWith('.json')) s = s.slice(0, -'.json'.length);
+  return SLUG_RE.test(s) ? s : null;
+}
+
+/**
+ * Fetch a palette from lospec.com by URL or bare slug. Resolves to
+ * `{name, colors}` with colors packed via core/pixels; rejects with a
+ * `LospecError` (`bad_input` / `network` / `not_found` / `http` / `bad_data`).
+ */
+export async function fetchLospecPalette(
+  slugOrUrl: string,
+): Promise<{ name: string; colors: Rgba[] }> {
+  const slug = lospecSlug(slugOrUrl);
+  if (slug === null) {
+    throw lospecError('bad_input', 'that does not look like a lospec palette URL or slug');
+  }
+  let res: Response;
+  try {
+    res = await fetch(`https://lospec.com/palette-list/${slug}.json`);
+  } catch {
+    throw lospecError(
+      'network',
+      'lospec said no — offline or blocked; download the .gpl from lospec instead',
+    );
+  }
+  if (res.status === 404) {
+    throw lospecError('not_found', `no palette called '${slug}' on lospec`);
+  }
+  if (!res.ok) {
+    throw lospecError('http', `lospec said no (HTTP ${res.status}) — try again later`);
+  }
+  let parsed: unknown;
+  try {
+    parsed = await res.json();
+  } catch {
+    throw lospecError('bad_data', 'lospec sent something unreadable — not palette JSON');
+  }
+  if (parsed === null || typeof parsed !== 'object') {
+    throw lospecError('bad_data', 'lospec sent something unreadable — not palette JSON');
+  }
+  const obj = parsed as { name?: unknown; colors?: unknown };
+  if (!Array.isArray(obj.colors)) {
+    throw lospecError('bad_data', 'that palette has no colors field');
+  }
+  const colors: Rgba[] = [];
+  for (const c of obj.colors) {
+    if (typeof c !== 'string') continue;
+    const v = hexToRgba(c.startsWith('#') ? c : `#${c}`);
+    if (v !== null) colors.push(v);
+  }
+  if (colors.length === 0) {
+    throw lospecError('bad_data', 'no usable colors in that palette');
+  }
+  const name = typeof obj.name === 'string' && obj.name.trim() !== '' ? obj.name.trim() : slug;
+  return { name, colors };
+}

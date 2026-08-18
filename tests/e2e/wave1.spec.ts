@@ -78,7 +78,7 @@ test.beforeEach(async ({ page }) => {
 
 test('boots a blank 32×32 doc with shell chrome', async ({ page }) => {
   await expect(page.locator('.sl-topbar')).toBeVisible();
-  await expect(page.locator('.sl-toolbar .sl-tool-btn')).toHaveCount(10);
+  await expect(page.locator('.sl-toolbar .sl-tool-btn')).toHaveCount(11);
   await expect(page.locator('.sl-status')).toContainText('32×32');
   const p = await probe(page);
   expect(p.docW).toBe(32);
