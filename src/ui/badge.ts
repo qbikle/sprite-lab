@@ -14,6 +14,7 @@ export const BADGE_H = 31;
 
 /* ── 3×5 pixel font (just the letters the badge needs) ── */
 
+/* Small 3×5 caps — fine at 1× for "BUILT WITH". */
 const FONT: Readonly<Record<string, readonly string[]>> = {
   B: ['##.', '#.#', '##.', '#.#', '##.'],
   U: ['#.#', '#.#', '#.#', '#.#', '###'],
@@ -22,10 +23,18 @@ const FONT: Readonly<Record<string, readonly string[]>> = {
   T: ['###', '.#.', '.#.', '.#.', '.#.'],
   W: ['#.#', '#.#', '#.#', '###', '#.#'],
   H: ['#.#', '#.#', '###', '#.#', '#.#'],
-  Q: ['.#.', '#.#', '#.#', '.#.', '..#'],
-  K: ['#.#', '##.', '#..', '##.', '#.#'],
-  E: ['###', '#..', '##.', '#..', '###'],
   ' ': ['...', '...', '...', '...', '...'],
+};
+
+/* Wordmark 4×5 caps — 3-wide letterforms turn to mush at 2×; the name
+ *  deserves real bowls and real diagonals. Variable width (row length). */
+const WORDMARK: Readonly<Record<string, readonly string[]>> = {
+  Q: ['.##.', '#..#', '#..#', '.##.', '...#'],
+  B: ['###.', '#..#', '###.', '#..#', '###.'],
+  I: ['###', '.#.', '.#.', '.#.', '###'],
+  K: ['#..#', '#.#.', '##..', '#.#.', '#..#'],
+  L: ['#...', '#...', '#...', '#...', '####'],
+  E: ['####', '#...', '###.', '#...', '####'],
 };
 
 const HEART_BIG: readonly string[] = [
@@ -84,6 +93,7 @@ function stampRows(
 
 function stampText(
   out: Uint32Array,
+  font: Readonly<Record<string, readonly string[]>>,
   text: string,
   x0: number,
   y0: number,
@@ -92,9 +102,9 @@ function stampText(
 ): number {
   let x = x0;
   for (const ch of text) {
-    const glyph = FONT[ch];
+    const glyph = font[ch];
     if (glyph) stampRows(out, glyph, x, y0, color, scale);
-    x += 4 * scale;
+    x += ((glyph?.[0]?.length ?? 3) + 1) * scale;
   }
   return x - scale; // right edge after the trailing gap is trimmed
 }
@@ -113,8 +123,8 @@ export function buildBadgePixels(colors: BadgeColors, heartBig: boolean): Uint32
     out[y * BADGE_W] = colors.border;
     out[y * BADGE_W + (BADGE_W - 1)] = colors.border;
   }
-  stampText(out, 'BUILT WITH', 6, 6, colors.text, 1);
-  stampText(out, 'QBIKLE', 6, 14, colors.accent, 2);
+  stampText(out, FONT, 'BUILT WITH', 6, 6, colors.text, 1);
+  stampText(out, WORDMARK, 'QBIKLE', 6, 14, colors.accent, 2);
   // the heart reads as part of the sentence: "built with ♥"
   stampRows(out, heartBig ? HEART_BIG : HEART_SMALL, 46, 4, colors.heart, 1);
   // corner studs — the cozy rivets classic buttons wear
