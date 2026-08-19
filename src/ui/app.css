@@ -3358,7 +3358,7 @@ textarea,
 .sl-badge {
   position: relative;
   margin-top: auto;
-  align-self: center;
+  align-self: stretch;
   flex: none;
   padding: 0;
   border: 0;
@@ -3368,8 +3368,8 @@ textarea,
 }
 
 .sl-badge-canvas {
-  width: 176px;
-  height: 62px;
+  width: 100%;
+  height: auto;
   image-rendering: pixelated;
   display: block;
   box-shadow: 3px 3px 0 var(--shadow);

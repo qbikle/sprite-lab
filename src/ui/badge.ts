@@ -23,7 +23,6 @@ const FONT: Readonly<Record<string, readonly string[]>> = {
   T: ['###', '.#.', '.#.', '.#.', '.#.'],
   W: ['#.#', '#.#', '#.#', '###', '#.#'],
   H: ['#.#', '#.#', '###', '#.#', '#.#'],
-  ' ': ['...', '...', '...', '...', '...'],
 };
 
 /* Wordmark 4×5 caps — 3-wide letterforms turn to mush at 2×; the name
@@ -38,25 +37,21 @@ const WORDMARK: Readonly<Record<string, readonly string[]>> = {
 };
 
 const HEART_BIG: readonly string[] = [
-  '.###.###.',
-  '#########',
-  '#########',
-  '#########',
-  '.#######.',
-  '..#####..',
-  '...###...',
-  '....#....',
+  '.##..##.',
+  '########',
+  '########',
+  '.######.',
+  '..####..',
+  '...##...',
 ];
 
 const HEART_SMALL: readonly string[] = [
-  '.........',
-  '..##.##..',
-  '.#######.',
-  '.#######.',
-  '..#####..',
-  '...###...',
-  '....#....',
-  '.........',
+  '........',
+  '..#..#..',
+  '.######.',
+  '.######.',
+  '..####..',
+  '...##...',
 ];
 
 export interface BadgeColors {
@@ -123,10 +118,14 @@ export function buildBadgePixels(colors: BadgeColors, heartBig: boolean): Uint32
     out[y * BADGE_W] = colors.border;
     out[y * BADGE_W + (BADGE_W - 1)] = colors.border;
   }
-  stampText(out, FONT, 'BUILT WITH', 6, 6, colors.text, 1);
+  // Geometry is solved, not eyeballed: line1 ink starts at x=8 (the
+  // wordmark's optical left — Q's map has a blank leading column), the
+  // BUILT·WITH·♥ gaps are all exactly 6px, and the heart's right edge
+  // lands on x=61 — the wordmark E's right edge. 8+19 +6+1+ 15 +6+1+ 8 = 62.
+  stampText(out, FONT, 'BUILT', 8, 6, colors.text, 1);
+  stampText(out, FONT, 'WITH', 33, 6, colors.text, 1);
+  stampRows(out, heartBig ? HEART_BIG : HEART_SMALL, 54, 5, colors.heart, 1);
   stampText(out, WORDMARK, 'QBIKLE', 6, 14, colors.accent, 2);
-  // the heart reads as part of the sentence: "built with ♥"
-  stampRows(out, heartBig ? HEART_BIG : HEART_SMALL, 46, 4, colors.heart, 1);
   // corner studs — the cozy rivets classic buttons wear
   for (const [cx, cy] of [
     [2, 2],
