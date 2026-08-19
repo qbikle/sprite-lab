@@ -39,6 +39,7 @@ import { docFromChoice, openNewDocModal, openResizeModal } from '../ui/panels/ne
 import { openExportModal } from '../ui/panels/exportmodal';
 import { PreviewPanel } from '../ui/panels/preview';
 import { openArcade, setRemixParent } from '../ui/panels/arcade';
+import { Badge } from '../ui/badge';
 import type { ArcadePost } from '../net/arcade';
 import { Shortcuts } from '../ui/shortcuts';
 import { ToolbarPanel } from '../ui/panels/toolbar';
@@ -863,6 +864,31 @@ export class App {
         delete (window as unknown as { __lab?: object }).__lab;
       });
     }
+
+    // Mounted last so it sits at the very bottom of the side rail.
+    const badge = new Badge({
+      host: slots.side,
+      bus,
+      onStatus: status,
+      onRemix: (badgeSprite) => {
+        const dirty = history.canUndo || history.canRedo || docHasPixels();
+        const proceed = dirty
+          ? confirmModal({
+              title: 'remix the badge',
+              body: 'open the badge sprite? your current sprite will be discarded.',
+              confirmLabel: 'remix',
+              danger: true,
+            })
+          : Promise.resolve(true);
+        void proceed.then((ok) => {
+          if (!ok) return;
+          adopt(badgeSprite);
+          status('the badge is yours now. be gentle.');
+        });
+      },
+    });
+    badge.mount();
+    this.teardown.push(() => badge.unmount());
 
     bus.emit('status:message', { text: welcomeLine() });
     if (firstRun) this.teardown.push(mountFirstRunCard(() => {}));
