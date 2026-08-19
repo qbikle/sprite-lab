@@ -29,8 +29,8 @@ const FONT: Readonly<Record<string, readonly string[]>> = {
 };
 
 const HEART_BIG: readonly string[] = [
-  '.##..##..',
-  '####.####',
+  '.###.###.',
+  '#########',
   '#########',
   '#########',
   '.#######.',
@@ -41,8 +41,8 @@ const HEART_BIG: readonly string[] = [
 
 const HEART_SMALL: readonly string[] = [
   '.........',
-  '..#...#..',
-  '.###.###.',
+  '..##.##..',
+  '.#######.',
   '.#######.',
   '..#####..',
   '...###...',
@@ -115,7 +115,8 @@ export function buildBadgePixels(colors: BadgeColors, heartBig: boolean): Uint32
   }
   stampText(out, 'BUILT WITH', 6, 6, colors.text, 1);
   stampText(out, 'QBIKLE', 6, 14, colors.accent, 2);
-  stampRows(out, heartBig ? HEART_BIG : HEART_SMALL, 73, 6, colors.heart, 1);
+  // the heart reads as part of the sentence: "built with ♥"
+  stampRows(out, heartBig ? HEART_BIG : HEART_SMALL, 46, 4, colors.heart, 1);
   // corner studs — the cozy rivets classic buttons wear
   for (const [cx, cy] of [
     [2, 2],

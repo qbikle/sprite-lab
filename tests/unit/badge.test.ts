@@ -33,8 +33,8 @@ describe('buildBadgePixels', () => {
     expect(count(p, COLORS.text)).toBeGreaterThan(60);
     // "QBIKLE" at 2× dwarfs it (plus 4 corner studs)
     expect(count(p, COLORS.accent)).toBeGreaterThan(count(p, COLORS.text));
-    // big heart = 46 filled cells of the 9×8 map
-    expect(count(p, COLORS.heart)).toBe(46);
+    // big heart = 49 filled cells of the 9×8 map
+    expect(count(p, COLORS.heart)).toBe(49);
   });
 
   it('heart frames differ and only in heart-or-bg cells', () => {
