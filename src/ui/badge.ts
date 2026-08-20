@@ -23,6 +23,7 @@ const FONT: Readonly<Record<string, readonly string[]>> = {
   T: ['###', '.#.', '.#.', '.#.', '.#.'],
   W: ['#.#', '#.#', '#.#', '###', '#.#'],
   H: ['#.#', '#.#', '###', '#.#', '#.#'],
+  Y: ['#.#', '#.#', '.#.', '.#.', '.#.'],
 };
 
 /* Wordmark 4×5 caps — 3-wide letterforms turn to mush at 2×; the name
@@ -37,21 +38,21 @@ const WORDMARK: Readonly<Record<string, readonly string[]>> = {
 };
 
 const HEART_BIG: readonly string[] = [
-  '.##..##.',
-  '########',
-  '########',
-  '.######.',
-  '..####..',
-  '...##...',
+  '.##.##.',
+  '#######',
+  '#######',
+  '.#####.',
+  '..###..',
+  '...#...',
 ];
 
 const HEART_SMALL: readonly string[] = [
-  '........',
-  '..#..#..',
-  '.######.',
-  '.######.',
-  '..####..',
-  '...##...',
+  '.......',
+  '..#.#..',
+  '.#####.',
+  '.#####.',
+  '..###..',
+  '...#...',
 ];
 
 export interface BadgeColors {
@@ -118,13 +119,14 @@ export function buildBadgePixels(colors: BadgeColors, heartBig: boolean): Uint32
     out[y * BADGE_W] = colors.border;
     out[y * BADGE_W + (BADGE_W - 1)] = colors.border;
   }
-  // Geometry is solved, not eyeballed: line1 ink starts at x=8 (the
-  // wordmark's optical left — Q's map has a blank leading column), the
-  // BUILT·WITH·♥ gaps are all exactly 6px, and the heart's right edge
-  // lands on x=61 — the wordmark E's right edge. 8+19 +6+1+ 15 +6+1+ 8 = 62.
+  // Geometry is solved, not eyeballed: line1 spans exactly the wordmark's
+  // ink (x=8, the optical left behind Q's blank column, through x=61, the
+  // E's right edge). BUILT(19) + WITH(15) + ♥(7) + BY(7) + 3 equal 2px gaps
+  // = 54. The heart is 7 wide so the equation closes on integers.
   stampText(out, FONT, 'BUILT', 8, 6, colors.text, 1);
-  stampText(out, FONT, 'WITH', 33, 6, colors.text, 1);
-  stampRows(out, heartBig ? HEART_BIG : HEART_SMALL, 54, 5, colors.heart, 1);
+  stampText(out, FONT, 'WITH', 29, 6, colors.text, 1);
+  stampRows(out, heartBig ? HEART_BIG : HEART_SMALL, 46, 5, colors.heart, 1);
+  stampText(out, FONT, 'BY', 55, 6, colors.text, 1);
   stampText(out, WORDMARK, 'QBIKLE', 6, 14, colors.accent, 2);
   // corner studs — the cozy rivets classic buttons wear
   for (const [cx, cy] of [
